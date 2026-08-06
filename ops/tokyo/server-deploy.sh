@@ -21,6 +21,7 @@ canary_port=10101
 cleanup_staging=""
 cleanup_canary_home=""
 cleanup_canary_pid=""
+prepared_release_dir=""
 
 fail() {
   echo "ERROR: $*" >&2
@@ -119,6 +120,15 @@ run_probe() {
     --config "$config_root/config.json"
 }
 
+assert_release_complete() {
+  local release_dir=$1
+  [ -x "$release_dir/node_modules/bun/bin/bun.exe" ] || fail "release Bun runtime is missing"
+  [ -f "$release_dir/src/cli/index.ts" ] || fail "release CLI entry point is missing"
+  [ -s "$release_dir/gui/dist/index.html" ] || fail "release GUI index is missing"
+  find "$release_dir/gui/dist/assets" -maxdepth 1 -type f -size +0c -print -quit \
+    | grep -q . || fail "release GUI assets are missing"
+}
+
 prepare_release() {
   [[ "$release" =~ ^[A-Za-z0-9._-]+$ ]] || fail "invalid release id"
   [ -f "$archive" ] || fail "archive not found: $archive"
@@ -130,8 +140,9 @@ prepare_release() {
   mkdir -p "$release_root" "$staging_root" "$canary_root" "$log_root"
   local release_dir="$release_root/$release"
   if [ -f "$release_dir/.opencodex-release" ]; then
+    assert_release_complete "$release_dir"
+    prepared_release_dir="$release_dir"
     echo "RELEASE_REUSED path=$release_dir"
-    printf '%s\n' "$release_dir"
     return 0
   fi
   [ ! -e "$release_dir" ] || fail "release path exists without a completion marker"
@@ -149,17 +160,20 @@ prepare_release() {
     "$bootstrap_bun" install --frozen-lockfile
     cd gui
     "$bootstrap_bun" install --frozen-lockfile
-    "$bootstrap_bun" run build
+    # Vite 8 requires Node 20+, while this server intentionally keeps Node 18.
+    # Force package shebangs through the release-pinned Bun runtime.
+    "$bootstrap_bun" --bun run build
   )
   local release_bun="$staging/node_modules/bun/bin/bun.exe"
   [ -x "$release_bun" ] || fail "release Bun runtime was not installed"
   "$release_bun" test "$staging/tests/sse-payload-rewrite.test.ts" "$staging/tests/responses-snapshot-repair.test.ts"
+  assert_release_complete "$staging"
   printf 'release=%s\nsha256=%s\nprepared_at=%s\n' \
     "$release" "$actual_sha" "$(date -Iseconds)" > "$staging/.opencodex-release"
   mv -- "$staging" "$release_dir"
   cleanup_staging=""
+  prepared_release_dir="$release_dir"
   echo "RELEASE_PREPARED path=$release_dir"
-  printf '%s\n' "$release_dir"
 }
 
 validate_canary() {
@@ -256,6 +270,9 @@ rollback_release() {
     wait_for_health "$production_port" 45 || true
     fail "rollback target failed health check; restored the newer release"
   fi
+  printf 'release=%s\npath=%s\nprevious=%s\nrolled_back_at=%s\n' \
+    "$(basename "$previous_target")" "$previous_target" "$current_target" "$(date -Iseconds)" \
+    > "$deploy_root/active-release"
   echo "ROLLBACK_OK current=$previous_target previous=$current_target"
 }
 
@@ -274,10 +291,12 @@ show_status() {
 
 case "$action" in
   deploy)
-    release_dir=$(prepare_release)
-    release_dir=$(printf '%s\n' "$release_dir" | tail -n 1)
-    validate_canary "$release_dir"
-    activate_release "$release_dir"
+    # Keep this as a plain function call: Bash disables errexit inside functions
+    # used in command substitutions, which could otherwise hide a failed build.
+    prepare_release
+    [ -n "$prepared_release_dir" ] || fail "release preparation returned no path"
+    validate_canary "$prepared_release_dir"
+    activate_release "$prepared_release_dir"
     ;;
   rollback) rollback_release ;;
   status) show_status ;;
