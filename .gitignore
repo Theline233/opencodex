@@ -2,6 +2,7 @@ node_modules/
 dist/
 .env
 *.log
+ops/tokyo/deploy-key.pem
 .DS_Store
 
 # Maintainer planning notes are TRACKED in this repository (`devlog/`). Security
