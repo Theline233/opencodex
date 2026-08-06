@@ -138,7 +138,7 @@ async function flushMicrotasks(): Promise<void> {
 
 async function advanceSilentRefresh(): Promise<void> {
   await act(async () => {
-    jest.advanceTimersByTime(2000);
+    jest.advanceTimersByTime(10_000);
   });
   await flushMicrotasks();
   await act(async () => {
@@ -203,9 +203,11 @@ test("Logs: initial failure shows error; silent failure keeps it; retry then rec
 
 test("Logs: silent failure after successful load keeps the table and does not toggle loading or empty state", async () => {
   let mode: "ok" | "fail" | "updated" = "ok";
+  const urls: string[] = [];
 
   globalThis.fetch = (async (input) => {
     const url = String(input);
+    urls.push(url);
     if (!url.includes("/api/logs")) return new Response(null, { status: 404 });
     if (mode === "fail") return jsonResponse({ error: "down" }, 503);
     if (mode === "updated") return jsonResponse([updatedLog]);
@@ -215,13 +217,15 @@ test("Logs: silent failure after successful load keeps the table and does not to
   const { root, container } = await mountLogs();
   await flushMicrotasks();
   expectTableLoaded(container, "gpt-test");
+  expect(urls.filter(url => url.includes("/api/logs")).at(-1)).toContain("limit=200");
 
   mode = "fail";
   await act(async () => {
-    jest.advanceTimersByTime(2000);
+    jest.advanceTimersByTime(10_000);
   });
   const midFlightLoading = /\bLoading\b/.test(container.textContent ?? "");
   await flushMicrotasks();
+  expect(urls.filter(url => url.includes("/api/logs")).at(-1)).toContain("limit=50");
 
   expect(midFlightLoading).toBe(false);
   expectTableLoaded(container, "gpt-test");
@@ -259,7 +263,7 @@ test("Logs: silent success clears a previous error; later silent failure keeps t
   await act(async () => { root.unmount(); });
 });
 
-// One failed tick on a two-second poll is noise worth swallowing, but an outage that never
+// One failed tick on a ten-second poll is noise worth swallowing, but an outage that never
 // recovers must not leave stale rows reading as current forever. Three consecutive failures
 // is the point where silence becomes a lie.
 test("Logs: a sustained poll outage says the rows are stale, and a recovery clears it", async () => {
@@ -298,6 +302,54 @@ test("Logs: a sustained poll outage says the rows are stale, and a recovery clea
   await act(async () => { root.unmount(); });
 });
 
+test("Logs: loads a small first page and fetches older rows only on demand", async () => {
+  const urls: string[] = [];
+  const recentOne = {
+    ...sampleLog,
+    requestId: "req-2",
+    timestamp: sampleLog.timestamp + 1_000,
+    model: "gpt-recent-one",
+  };
+  const recentTwo = {
+    ...sampleLog,
+    requestId: "req-3",
+    timestamp: sampleLog.timestamp + 2_000,
+    model: "gpt-recent-two",
+  };
+
+  globalThis.fetch = (async (input) => {
+    const url = String(input);
+    urls.push(url);
+    if (!url.includes("/api/logs")) return new Response(null, { status: 404 });
+    if (url.includes("offset=2")) {
+      return jsonResponse({ total: 3, logs: [sampleLog] });
+    }
+    return jsonResponse({ total: 3, logs: [recentOne, recentTwo] });
+  }) as typeof fetch;
+
+  const { root, container } = await mountLogs();
+  await flushMicrotasks();
+
+  expect(urls.filter(url => url.includes("/api/logs")).at(-1)).toContain("limit=200");
+  expect(container.textContent).toContain("Loaded 2 of 3");
+  expect(container.textContent).not.toContain("gpt-test");
+
+  const loadOlder = [...container.querySelectorAll("button")]
+    .find(button => button.textContent?.trim() === "Load older");
+  expect(loadOlder).toBeTruthy();
+  await act(async () => { loadOlder!.click(); });
+  await flushMicrotasks();
+
+  const olderUrl = urls.filter(url => url.includes("/api/logs")).at(-1);
+  expect(olderUrl).toContain("limit=200");
+  expect(olderUrl).toContain("offset=2");
+  expect(container.textContent).toContain("Loaded 3 of 3");
+  expect(container.textContent).toContain("gpt-test");
+  expect(container.textContent).not.toContain("Load older");
+
+  await act(async () => { root.unmount(); });
+});
+
 test("Logs: disabling auto-refresh stops scheduled requests", async () => {
   const urls: string[] = [];
   globalThis.fetch = (async (input) => {
@@ -328,7 +380,7 @@ test("Logs: disabling auto-refresh stops scheduled requests", async () => {
   expect(afterDisable).toBeLessThanOrEqual(afterInitial + 1);
 
   await act(async () => {
-    jest.advanceTimersByTime(6000);
+    jest.advanceTimersByTime(30_000);
   });
   await flushMicrotasks();
 
@@ -368,7 +420,7 @@ test("Logs: switching to the Debug tab stops scheduled log requests", async () =
   expect(container.querySelector("#logs-tab-debug")?.getAttribute("aria-selected")).toBe("true");
 
   await act(async () => {
-    jest.advanceTimersByTime(6000);
+    jest.advanceTimersByTime(30_000);
   });
   await flushMicrotasks();
 
