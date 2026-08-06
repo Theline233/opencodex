@@ -8,6 +8,7 @@ import { IconX } from "../icons";
 import { modelLabel } from "../model-display";
 import { readSessionListCache, writeSessionListCache } from "../session-list-cache";
 import { useDataSurface } from "../data-surface";
+import { setClientResourceData } from "../client-resource";
 import { DataSurfaceSkeleton } from "../components/data-surface";
 import { EmptyState, Notice } from "../ui";
 import Debug from "./Debug";
@@ -19,8 +20,14 @@ import type { LogSurface, LogSurfaceFilter } from "./logs-surface-filter";
 import { logMatchesSurface } from "./logs-surface-filter";
 
 function logsCacheKey(apiBase: string): string {
-  return `ocx.logs.list.v1:${apiBase}`;
+  return `ocx.logs.list.v2:${apiBase}`;
 }
+
+const INITIAL_LOG_LIMIT = 200;
+const REFRESH_LOG_LIMIT = 50;
+const LOAD_OLDER_LOG_LIMIT = 200;
+const MAX_CLIENT_LOGS = 2000;
+const LOG_POLL_MS = 10_000;
 
 interface UsageBreakdown {
   inputTokens: number;
@@ -141,6 +148,11 @@ export interface LogEntry {
   displayMetrics?: LogDisplayMetrics;
 }
 
+interface LogFeed {
+  logs: LogEntry[];
+  total: number;
+}
+
 /** Session-cache entries are arbitrary JSON — reject shapes that would crash the table. */
 function validCachedLogs(cached: LogEntry[] | null): LogEntry[] | null {
   if (!Array.isArray(cached)) return null;
@@ -158,6 +170,62 @@ function validCachedLogs(cached: LogEntry[] | null): LogEntry[] | null {
     }
   }
   return cached;
+}
+
+function validCachedLogFeed(cached: LogFeed | null): LogFeed | null {
+  if (!cached || typeof cached !== "object") return null;
+  const logs = validCachedLogs(cached.logs);
+  if (!logs || !Number.isFinite(cached.total) || cached.total < logs.length) return null;
+  return { logs, total: Math.floor(cached.total) };
+}
+
+function parseLogFeed(body: unknown): LogFeed {
+  if (Array.isArray(body)) {
+    const logs = validCachedLogs(body as LogEntry[]) ?? [];
+    return { logs, total: logs.length };
+  }
+  if (!body || typeof body !== "object") return { logs: [], total: 0 };
+  const candidate = body as { logs?: unknown; total?: unknown };
+  const logs = Array.isArray(candidate.logs)
+    ? (validCachedLogs(candidate.logs as LogEntry[]) ?? [])
+    : [];
+  const total = typeof candidate.total === "number" && Number.isFinite(candidate.total)
+    ? Math.max(logs.length, Math.floor(candidate.total))
+    : logs.length;
+  return { logs, total };
+}
+
+function logIdentity(log: LogEntry): string {
+  return log.requestId ?? JSON.stringify([
+    log.timestamp,
+    log.provider,
+    log.model,
+    log.status,
+    log.durationMs,
+  ]);
+}
+
+function mergeLogFeed(current: LogFeed, page: LogFeed): LogFeed {
+  // A lower total means the server restarted or its in-memory ring was cleared.
+  // Do not keep rows that no longer belong to the current server generation.
+  if (page.total < current.total) {
+    return { logs: page.logs.slice(-MAX_CLIENT_LOGS), total: page.total };
+  }
+  const merged = new Map<string, LogEntry>();
+  for (const log of current.logs) merged.set(logIdentity(log), log);
+  for (const log of page.logs) merged.set(logIdentity(log), log);
+  const logs = [...merged.values()]
+    .sort((a, b) => a.timestamp - b.timestamp)
+    .slice(-MAX_CLIENT_LOGS);
+  return { logs, total: page.total };
+}
+
+function writeLogFeedCache(key: string, feed: LogFeed): void {
+  // Keep revisit parsing cheap even after the user explicitly loaded the full ring.
+  writeSessionListCache(key, {
+    logs: feed.logs.slice(-INITIAL_LOG_LIMIT),
+    total: feed.total,
+  } satisfies LogFeed);
 }
 
 function isCursorUsageProvider(provider: string): boolean {
@@ -272,7 +340,7 @@ function formatEstimatedUsdValue(value: number, localeTag?: string): string {
   }).format(value)}`;
 }
 
-/** Consecutive failed polls before a stale table is called out. Two seconds each, so ~6s. */
+/** Consecutive failed polls before a stale table is called out. Ten seconds each, so ~30s. */
 const STALE_POLL_FAILURE_LIMIT = 3;
 
 const METRIC_REASON_KEYS = {
@@ -399,8 +467,13 @@ function summarizeFilteredLogs(entries: LogEntry[]): {
 export default function Logs({ apiBase }: { apiBase: string }) {
   const { t, locale } = useI18n();
   const resourceKey = logsCacheKey(apiBase);
-  const cachedLogs = validCachedLogs(readSessionListCache<LogEntry[]>(resourceKey));
+  const cachedFeed = validCachedLogFeed(readSessionListCache<LogFeed>(resourceKey));
+  const feedRef = useRef<LogFeed>(cachedFeed ?? { logs: [], total: 0 });
+  const firstFetchRef = useRef(true);
   const [autoRefresh, setAutoRefresh] = useState(true);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [loadOlderError, setLoadOlderError] = useState<unknown>();
+  const loadOlderControllerRef = useRef<AbortController | null>(null);
   const [detail, setDetail] = useState<LogEntry | null>(null);
   const [surfaceFilter, setSurfaceFilter] = useState<LogSurfaceFilter>("all");
   const [conversationFilter, setConversationFilter] = useState("");
@@ -409,7 +482,7 @@ export default function Logs({ apiBase }: { apiBase: string }) {
   const localeTag = LOCALES.find(l => l.code === locale)?.htmlLang;
   // The proxy's own zone, so timestamps read the same as the server's logs rather than being
   // silently shifted into the viewer's zone (#725). Fetched once: it cannot change while the
-  // page is open, so it must not join the 2s log poll. Undefined until it arrives, which
+  // page is open, so it must not join the log poll. Undefined until it arrives, which
   // formats browser-local exactly as before.
   const [serverTimeZone, setServerTimeZone] = useState<string | undefined>();
   useEffect(() => {
@@ -453,34 +526,79 @@ export default function Logs({ apiBase }: { apiBase: string }) {
 
   const selectTab = selectLogsTab;
 
-  const loadLogs = useCallback(async (signal: AbortSignal): Promise<LogEntry[]> => {
-    const res = await fetch(`${apiBase}/api/logs?limit=2000`, { signal });
+  const fetchLogPage = useCallback(async (
+    limit: number,
+    signal: AbortSignal,
+    offset = 0,
+  ): Promise<LogFeed> => {
+    const params = new URLSearchParams({ limit: String(limit) });
+    if (offset > 0) params.set("offset", String(offset));
+    const res = await fetch(`${apiBase}/api/logs?${params}`, { signal });
     if (!res.ok) throw new Error(`${res.status} ${res.statusText}`.trim());
-    const body = await res.json() as LogEntry[] | { logs?: LogEntry[] };
-    const next = Array.isArray(body) ? body : (body.logs ?? []);
-    writeSessionListCache(resourceKey, next);
-    return next;
-  }, [apiBase, resourceKey]);
+    return parseLogFeed(await res.json());
+  }, [apiBase]);
 
-  // The resource layer owns the request and the 2s poll. It keeps held rows through a quiet
+  const loadLogs = useCallback(async (signal: AbortSignal): Promise<LogFeed> => {
+    const page = await fetchLogPage(
+      firstFetchRef.current ? INITIAL_LOG_LIMIT : REFRESH_LOG_LIMIT,
+      signal,
+    );
+    const next = mergeLogFeed(feedRef.current, page);
+    firstFetchRef.current = false;
+    feedRef.current = next;
+    writeLogFeedCache(resourceKey, next);
+    return next;
+  }, [fetchLogPage, resourceKey]);
+
+  // The resource layer owns the initial page and the ten-second refresh poll. It keeps held rows through a quiet
   // poll on its own, which is what the old silent/non-silent split was hand-rolling — and an
   // empty successful response is now a real empty result rather than a cold load.
-  const logsResource = useDataSurface<LogEntry[]>(
+  const logsResource = useDataSurface<LogFeed>(
     resourceKey,
     [apiBase],
     loadLogs,
     {
-      isEmpty: rows => rows.length === 0,
+      isEmpty: current => current.logs.length === 0,
       enabled: tab === "logs",
-      pollMs: autoRefresh ? 2000 : undefined,
-      initialData: cachedLogs ?? undefined,
+      pollMs: autoRefresh ? LOG_POLL_MS : undefined,
+      initialData: cachedFeed ?? undefined,
     },
   );
   const logsState = logsResource.state;
-  const logs = logsState.data ?? cachedLogs ?? [];
+  const feed = logsState.data ?? cachedFeed ?? { logs: [], total: 0 };
+  const logs = feed.logs;
   const fetchLogs = logsResource.refresh;
 
-  // A single failed tick on a two-second poll is noise, but an outage that never recovers must not
+  useEffect(() => () => loadOlderControllerRef.current?.abort(), [apiBase]);
+
+  const loadOlder = useCallback(async () => {
+    if (loadingOlder || feedRef.current.logs.length >= feedRef.current.total) return;
+    loadOlderControllerRef.current?.abort();
+    const controller = new AbortController();
+    loadOlderControllerRef.current = controller;
+    setLoadingOlder(true);
+    setLoadOlderError(undefined);
+    try {
+      const current = feedRef.current;
+      const page = await fetchLogPage(
+        LOAD_OLDER_LOG_LIMIT,
+        controller.signal,
+        current.logs.length,
+      );
+      if (controller.signal.aborted) return;
+      const next = mergeLogFeed(current, page);
+      feedRef.current = next;
+      writeLogFeedCache(resourceKey, next);
+      setClientResourceData(resourceKey, next);
+    } catch (error) {
+      if (!controller.signal.aborted) setLoadOlderError(error);
+    } finally {
+      if (!controller.signal.aborted) setLoadingOlder(false);
+      if (loadOlderControllerRef.current === controller) loadOlderControllerRef.current = null;
+    }
+  }, [fetchLogPage, loadingOlder, resourceKey]);
+
+  // A single failed tick on a ten-second poll is noise, but an outage that never recovers must not
   // leave the user reading stale rows as if they were current. Count consecutive failures and speak
   // up once it is clearly not transient.
   const settledFailure = !logsResource.refreshing && logsState.showError;
@@ -654,8 +772,8 @@ export default function Logs({ apiBase }: { apiBase: string }) {
       )}
 
       {/*
-        Only a cold failure or a user-initiated retry surfaces here. This tab polls every two
-        seconds, so a transient 5xx would otherwise flash the banner on and off under a table
+        Only a cold failure or a user-initiated retry surfaces here. A transient polling 5xx
+        would otherwise flash the banner on and off under a table
         that is still perfectly readable — noise, not information. A quiet poll failure keeps the
         held rows and waits for the next tick, which is the behaviour the auto-refresh tests pin.
       */}
@@ -802,6 +920,33 @@ export default function Logs({ apiBase }: { apiBase: string }) {
           </table>
         </div>
         </>
+      )}
+
+      {logs.length > 0 && logsState.kind !== "failed-cold" && (
+        <div className="logs-page-controls">
+          <span className="muted text-control">
+            {t("logs.loadedCount", { loaded: logs.length, total: feed.total })}
+          </span>
+          {logs.length < Math.min(feed.total, MAX_CLIENT_LOGS) && (
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => { void loadOlder(); }}
+              disabled={loadingOlder}
+            >
+              {loadingOlder ? t("common.loading") : t("logs.loadOlder")}
+            </button>
+          )}
+        </div>
+      )}
+
+      {loadOlderError !== undefined && (
+        <Notice tone="err">
+          {t("logs.loadError")} {loadOlderError instanceof Error ? loadOlderError.message : ""}{" "}
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => { void loadOlder(); }} disabled={loadingOlder}>
+            {t("common.retry")}
+          </button>
+        </Notice>
       )}
 
       {detail && (

@@ -521,6 +521,8 @@ export const ko: Record<TKey, string> = {
   "logs.tabDebug": "디버그",
   "logs.subtitle": "로컬 opencodex 프록시를 거친 최근 요청입니다. 최신순.",
   "logs.autoRefresh": "자동 새로고침",
+  "logs.loadedCount": "전체 {total}개 중 {loaded}개 로드됨",
+  "logs.loadOlder": "이전 로그 불러오기",
   "logs.noRequests": "아직 요청이 없습니다.",
   "logs.loadError": "요청 로그를 불러오지 못했습니다.",
   "logs.filter.surface.label": "표면",

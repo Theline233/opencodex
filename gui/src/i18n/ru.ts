@@ -519,6 +519,8 @@ export const ru: Record<TKey, string> = {
   "logs.tabDebug": "Отладка",
   "logs.subtitle": "Недавние запросы через локальный прокси opencodex, новые сверху.",
   "logs.autoRefresh": "Автообновление",
+  "logs.loadedCount": "Загружено: {loaded} из {total}",
+  "logs.loadOlder": "Загрузить более ранние",
   "logs.noRequests": "Запросов пока нет.",
   "logs.loadError": "Не удалось загрузить журнал запросов.",
   "logs.filter.surface.label": "Источник",

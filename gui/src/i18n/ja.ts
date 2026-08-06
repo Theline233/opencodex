@@ -487,6 +487,8 @@ export const ja: Record<TKey, string> = {
   "logs.tabDebug": "デバッグ",
   "logs.subtitle": "ローカル opencodex プロキシを経由した最近のリクエスト(新しい順)。",
   "logs.autoRefresh": "自動更新",
+  "logs.loadedCount": "{total} 件中 {loaded} 件を読み込み済み",
+  "logs.loadOlder": "古いログを読み込む",
   "logs.noRequests": "まだリクエストがありません。",
   "logs.loadError": "リクエストログを読み込めませんでした。",
   "logs.filter.surface.label": "サーフェス",

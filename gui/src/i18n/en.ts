@@ -529,6 +529,8 @@ export const en = {
   "logs.tabDebug": "Debug",
   "logs.subtitle": "Recent requests routed through the local opencodex proxy, newest first.",
   "logs.autoRefresh": "Auto-refresh",
+  "logs.loadedCount": "Loaded {loaded} of {total}",
+  "logs.loadOlder": "Load older",
   "logs.noRequests": "No requests yet.",
   "logs.loadError": "Could not load request logs.",
   "logs.filter.surface.label": "Surface",

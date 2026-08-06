@@ -514,6 +514,8 @@ export const zh: Record<TKey, string> = {
   "logs.tabDebug": "调试",
   "logs.subtitle": "经过本地 opencodex 代理的最近请求，最新在前。",
   "logs.autoRefresh": "自动刷新",
+  "logs.loadedCount": "已加载 {loaded} / {total}",
+  "logs.loadOlder": "加载更早日志",
   "logs.noRequests": "暂无请求。",
   "logs.loadError": "无法加载请求日志。",
   "logs.filter.surface.label": "界面",

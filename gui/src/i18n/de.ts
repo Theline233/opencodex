@@ -502,6 +502,8 @@ export const de: Record<TKey, string> = {
   "logs.tabDebug": "Diagnose",
   "logs.subtitle": "Letzte Anfragen über den lokalen opencodex-Proxy, neueste zuerst.",
   "logs.autoRefresh": "Auto-Aktualisierung",
+  "logs.loadedCount": "Geladen: {loaded} von {total}",
+  "logs.loadOlder": "Ältere laden",
   "logs.noRequests": "Noch keine Anfragen.",
   "logs.loadError": "Anfrageprotokolle konnten nicht geladen werden.",
   "logs.filter.surface.label": "Oberfläche",

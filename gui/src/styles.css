@@ -1803,6 +1803,14 @@ table.logs-table {
   max-height: calc(100vh - 260px);
 }
 
+.logs-page-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+
 .logs-table thead {
   position: sticky;
   top: 0;
