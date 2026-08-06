@@ -198,12 +198,14 @@ export function relaySseWithBlockRewrite(
   const emitProcessedBlocks = (
     controller: ReadableStreamDefaultController<Uint8Array>,
     flushFinal = false,
-  ): void => {
+  ): boolean => {
+    let emitted = false;
     let next: { block: string; delimiter: string; rest: string } | null;
     while ((next = nextSseBlock(buffer))) {
       replaceBuffer(next.rest);
       for (const outBlock of rewrite(next.block)) {
         enqueueText(controller, outBlock + next.delimiter);
+        emitted = true;
       }
     }
     if (flushFinal && buffer.length > 0) {
@@ -213,28 +215,36 @@ export function relaySseWithBlockRewrite(
       const tailDelimiter = buffer.includes("\r\n") ? "\r\n\r\n" : "\n\n";
       for (let i = 0; i < tailBlocks.length; i++) {
         enqueueText(controller, tailBlocks[i]! + (i < tailBlocks.length - 1 ? tailDelimiter : ""));
+        emitted = true;
       }
       releaseBuffer();
     }
+    return emitted;
   };
 
   return new ReadableStream<Uint8Array>({
     async pull(controller) {
       try {
-        const { done, value } = await reader.read();
-        // A cancel raced this pending read: never feed the rewriter again
-        // after its disposal (#893 review).
-        if (cancelled) return;
-        if (done) {
-          appendBuffer(decoder.decode());
-          emitProcessedBlocks(controller, true);
-          releaseBuffer();
-          disposeRewrite();
-          controller.close();
-          return;
+        while (true) {
+          const { done, value } = await reader.read();
+          // A cancel raced this pending read: never feed the rewriter again
+          // after its disposal (#893 review).
+          if (cancelled) return;
+          if (done) {
+            appendBuffer(decoder.decode());
+            emitProcessedBlocks(controller, true);
+            releaseBuffer();
+            disposeRewrite();
+            controller.close();
+            return;
+          }
+          appendBuffer(decoder.decode(value, { stream: true }));
+          // Bun 1.3.14 may not schedule another pull when this pull returns
+          // without enqueueing. Keep reading until one event produces output
+          // (or EOF) so fragmented and intentionally filtered blocks cannot
+          // leave the downstream reader waiting forever.
+          if (emitProcessedBlocks(controller)) return;
         }
-        appendBuffer(decoder.decode(value, { stream: true }));
-        emitProcessedBlocks(controller);
       } catch (error) {
         releaseBuffer();
         disposeRewrite();

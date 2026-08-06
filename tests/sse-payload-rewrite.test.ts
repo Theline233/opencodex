@@ -26,6 +26,21 @@ function streamFromText(text: string): ReadableStream<Uint8Array> {
   });
 }
 
+function streamFromChunks(chunks: string[]): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder();
+  let index = 0;
+  return new ReadableStream<Uint8Array>({
+    pull(controller) {
+      const chunk = chunks[index++];
+      if (chunk === undefined) {
+        controller.close();
+        return;
+      }
+      controller.enqueue(encoder.encode(chunk));
+    },
+  });
+}
+
 async function readAll(stream: ReadableStream<Uint8Array>): Promise<string> {
   const reader = stream.getReader();
   const decoder = new TextDecoder();
@@ -39,6 +54,28 @@ async function readAll(stream: ReadableStream<Uint8Array>): Promise<string> {
 }
 
 describe("SSE payload rewrite composition", () => {
+  test("keeps pulling when the first SSE event is split across chunks", async () => {
+    const budget = createTestTranslatorBudget();
+    const rewritten = relaySseWithPayloadRewrite(
+      streamFromChunks([
+        'event: response.output_text.delta\ndata: {"type":"response.output_',
+        'text.delta","delta":"hello"}\n\n',
+      ]),
+      payload => payload,
+      budget,
+    );
+
+    const out = await Promise.race([
+      readAll(rewritten),
+      new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error("fragmented SSE relay stalled")), 500);
+      }),
+    ]);
+
+    expect(out).toContain('"delta":"hello"');
+    budget.dispose();
+  });
+
   test("applies image-gen restore and item-id repair in one relay pass", async () => {
     const upstream = [
       'event: response.output_item.added\ndata: {"type":"response.output_item.added","output_index":0,"item":{"type":"message","id":"msg_0","role":"assistant"}}\n\n',
