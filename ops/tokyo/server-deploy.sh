@@ -15,6 +15,7 @@ current_link="$deploy_root/current"
 previous_link="$deploy_root/previous"
 unit_dir="$HOME/.config/systemd/user"
 unit_path="$unit_dir/opencodex-proxy.service"
+nginx_config_path="/etc/nginx/conf.d/opencodex-tailscale.conf"
 config_root="$HOME/.opencodex"
 production_port=10100
 canary_port=10101
@@ -109,6 +110,27 @@ WantedBy=default.target
 EOF
   chmod 0644 "$temp"
   mv -f -- "$temp" "$unit_path"
+}
+
+install_nginx_config() {
+  local source="$current_link/ops/tokyo/nginx-opencodex-tailscale.conf"
+  local staged="$deploy_root/nginx-opencodex-tailscale.next.$$"
+  local backup="$deploy_root/nginx-before-${release}.conf"
+  [ -f "$source" ] || fail "release Nginx config is missing"
+  if sudo test -f "$nginx_config_path"; then
+    sudo cp -p -- "$nginx_config_path" "$backup"
+  fi
+  cp -- "$source" "$staged"
+  sudo install -o root -g root -m 0644 "$staged" "$nginx_config_path"
+  rm -f -- "$staged"
+  if ! sudo nginx -t; then
+    if [ -f "$backup" ]; then
+      sudo install -o root -g root -m 0644 "$backup" "$nginx_config_path"
+      sudo nginx -t || true
+    fi
+    fail "Nginx configuration validation failed"
+  fi
+  sudo systemctl reload nginx
 }
 
 run_probe() {
@@ -244,6 +266,7 @@ activate_release() {
 
   systemctl --user restart opencodex-proxy.service
   wait_for_health "$production_port" 45
+  install_nginx_config
   run_probe "$release_dir" "$production_port"
   systemctl --user is-active --quiet opencodex-proxy.service
   trap - ERR
