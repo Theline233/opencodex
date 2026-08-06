@@ -2,6 +2,7 @@ node_modules/
 dist/
 .env
 *.log
+ops/tokyo/deploy-key.pem
 .DS_Store
 
 # Generated CL compatibility identity embedded by prepare:package. It must stay
