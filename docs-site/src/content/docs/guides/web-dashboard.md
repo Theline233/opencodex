@@ -130,6 +130,10 @@ and other providers.
   the legacy weekly interpretation.
 - **Refresh quotas** re-reads account usage immediately so routing and the account cards use the same
   values.
+- Each Codex account card also shows the known Plus/subscription expiry. The expiry is read from the
+  OAuth JWT first; when it is missing, **Refresh expiry** performs a bounded management lookup. A failed
+  lookup keeps the last result and suppresses non-forced retries for 30 minutes. OAuth token expiry and
+  quota reset time are never treated as the Plus expiry.
 - Pool request logs use opaque labels such as `p3fa91c`, never account emails.
 - Each account card also shows that stable log label, the observed 30-day token total, an approximate
   API-equivalent cost using currently configured display pricing, and the fraction of attempts with

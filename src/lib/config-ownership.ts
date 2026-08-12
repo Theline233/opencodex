@@ -43,6 +43,7 @@ const INITIAL_OWNED_PATHS = [
   "catalog-backup.json",
   "claude-env.sh",
   "codex-accounts.json",
+  "codex-subscription-cache.json",
   "codex-runtime-clamp.json",
   "codex-runtime.json",
   "codex-shim.autorestore.lock",

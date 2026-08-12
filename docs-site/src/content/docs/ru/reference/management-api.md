@@ -235,6 +235,7 @@ picker изменилась. `catalogRefreshPending: true` в успешном �
 | `PUT /api/codex-auth/accounts/pause` | Поставить один аккаунт на паузу или снять её | 400 invalid account/state; 404 missing account |
 | `PUT /api/codex-auth/accounts/pause-exhausted` | Поставить на паузу аккаунты с исчерпанной квотой | Сбои mutation-lock превращаются в 503 |
 | `POST /api/codex-auth/accounts/clear-cooldown` | Очистить runtime cooldown для одного аккаунта или для всех | 400 invalid id |
+| `POST /api/codex-auth/accounts/subscription/refresh` | Принудительно обновить Plus/subscription metadata аккаунта; список аккаунтов отдаёт её как `subscription.activeUntil`, отдельно от срока OAuth-токена и квоты | 401 upstream authentication failed; 404 unknown account; 503 busy |
 | `GET, PUT /api/codex-auth/active` | Прочитать или выбрать активный аккаунт | 400 invalid or missing account; 409 paused/legacy-row conflict |
 | `PUT /api/codex-auth/auto-switch` | Задать порог квоты для автоматического переключения аккаунтов | 400 invalid threshold |
 | `PUT, PATCH /api/codex-auth/pool-strategy` | Обновить стратегию выбора в пуле аккаунтов Codex | 400 invalid strategy/config |

@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { decodeJwtPayload, extractAccountId, extractEmail } from "../src/oauth/chatgpt";
+import {
+  decodeJwtPayload,
+  extractAccountId,
+  extractChatGPTOrganizationId,
+  extractChatGPTSubscriptionClaims,
+  extractEmail,
+} from "../src/oauth/chatgpt";
 
 function fakeJwt(payload: Record<string, unknown>): string {
   const header = Buffer.from(JSON.stringify({ alg: "none" })).toString("base64url");
@@ -77,6 +83,55 @@ describe("ChatGPT OAuth JWT helpers", () => {
     const id = fakeJwt({ email: "id@test.com" });
     const access = fakeJwt({ email: "access@test.com" });
     expect(extractEmail(id, access)).toBe("id@test.com");
+  });
+
+  test("extractChatGPTSubscriptionClaims reads plan and numeric active-until claim", () => {
+    const jwt = fakeJwt({
+      "https://api.openai.com/auth": {
+        chatgpt_plan_type: "plus",
+        chatgpt_subscription_active_until: 1767225600,
+      },
+    });
+    expect(extractChatGPTSubscriptionClaims(undefined, jwt)).toEqual({
+      plan: "plus",
+      activeUntil: "1767225600",
+    });
+  });
+
+  test("extractChatGPTSubscriptionClaims fills missing id-token claims from access token", () => {
+    const id = fakeJwt({
+      "https://api.openai.com/auth": { chatgpt_plan_type: "plus" },
+    });
+    const access = fakeJwt({
+      "https://api.openai.com/auth": { chatgpt_subscription_active_until: "2027-01-01T00:00:00Z" },
+    });
+    expect(extractChatGPTSubscriptionClaims(id, access)).toEqual({
+      plan: "plus",
+      activeUntil: "2027-01-01T00:00:00Z",
+    });
+  });
+
+  test("extractChatGPTSubscriptionClaims never mistakes JWT exp for subscription expiry", () => {
+    expect(extractChatGPTSubscriptionClaims(fakeJwt({ exp: 1767225600 }))).toBeUndefined();
+  });
+
+  test("extractChatGPTOrganizationId prefers the default organization", () => {
+    const jwt = fakeJwt({
+      "https://api.openai.com/auth": {
+        organizations: [
+          { id: "org-secondary", is_default: false },
+          { id: "org-default", is_default: true },
+        ],
+      },
+    });
+    expect(extractChatGPTOrganizationId(undefined, jwt)).toBe("org-default");
+  });
+
+  test("extractChatGPTOrganizationId reads namespaced organization claims", () => {
+    const jwt = fakeJwt({
+      "https://api.openai.com/auth": { organization_id: "org-namespaced" },
+    });
+    expect(extractChatGPTOrganizationId(jwt)).toBe("org-namespaced");
   });
 });
 

@@ -211,6 +211,7 @@ Authorization: Bearer <admin-token>
 | `PUT /api/codex-auth/accounts/pause` | 1 つのアカウントを一時停止または再開する | 400 無効なアカウント/状態。 404 アカウントが見つかりません |
 | `PUT /api/codex-auth/accounts/pause-exhausted` |クォータを使い果たしたアカウントを一時停止する |ミューテーションロックの失敗は 503 になります |
 | `POST /api/codex-auth/accounts/clear-cooldown` | 1 つのアカウントまたはすべてのアカウントのランタイム クールダウンをクリアする | 400 無効な ID |
+| `POST /api/codex-auth/accounts/subscription/refresh` | 1 つのアカウントの Plus/サブスクリプション メタデータを強制更新する。アカウント一覧の `subscription.activeUntil` は OAuth トークンの期限やクォータとは別に返される | 401 アップストリーム認証失敗。404 不明なアカウント。503 ビジー |
 | `GET, PUT /api/codex-auth/active` |アクティブなアカウントを読み取るか選択します | 400 アカウントが無効または欠落しています。 409 一時停止/レガシー行の競合 |
 | `PUT /api/codex-auth/auto-switch` |自動アカウント切り替えのクォータしきい値を設定する | 400 無効なしきい値 |
 | `PUT, PATCH /api/codex-auth/pool-strategy` | Codex アカウントプールの選択戦略を更新 | 400 無効な戦略/構成 |

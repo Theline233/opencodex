@@ -44,6 +44,7 @@ import type { WsData } from "../src/server/ws-bridge";
 import { handleNativeProfileAPI } from "../src/codex/native-profile-api";
 import type { NativeProfileManager } from "../src/codex/native-profile-manager";
 import { MAIN_CODEX_ACCOUNT_ID, setMainAccountPlan } from "../src/codex/main-account";
+import { clearCodexSubscription, getCodexSubscriptionDto } from "../src/codex/subscription";
 import {
   deleteCodexAccount,
   reconcileMainCodexAccountRuntimeState,
@@ -101,6 +102,30 @@ function manualImportBody(overrides: Record<string, unknown> = {}): Record<strin
     chatgptAccountId: "acct-manual-test",
     ...overrides,
   };
+}
+
+function fakeCodexJwt(payload: Record<string, unknown>): string {
+  const header = Buffer.from(JSON.stringify({ alg: "none" })).toString("base64url");
+  const body = Buffer.from(JSON.stringify(payload)).toString("base64url");
+  return `${header}.${body}.fakesig`;
+}
+
+function mockCodexWarmupSuccess(): { calls: () => number } {
+  let calls = 0;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input) === "https://chatgpt.com/backend-api/codex/responses") {
+      calls += 1;
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      expect(body).toMatchObject({ model: "gpt-5.4-mini", input: WARMUP_INPUT, stream: true, store: false });
+      expect(body).not.toHaveProperty("max_output_tokens");
+      return new Response('event: response.completed\ndata: {"type":"response.completed"}\n\n', {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      });
+    }
+    return previousFetch(input, init);
+  }) as typeof fetch;
+  return { calls: () => calls };
 }
 
 async function completeMockCodexOAuth(options: {
@@ -241,6 +266,7 @@ beforeEach(() => {
   delete process.env[MANUAL_IMPORT_ENV];
   clearAccountNeedsReauth("__main__");
   clearAccountQuota();
+  clearCodexSubscription();
   clearAccountNeedsReauth(MAIN_CODEX_ACCOUNT_ID);
   clearMainAccountInfoCache();
   setMainAccountPlan(null);
@@ -256,6 +282,7 @@ afterEach(() => {
   setPersistedConfigMutationBeforeCommitForTests(null);
   clearAccountNeedsReauth("__main__");
   clearAccountQuota();
+  clearCodexSubscription();
   clearAccountNeedsReauth(MAIN_CODEX_ACCOUNT_ID);
   clearMainAccountInfoCache();
   setMainAccountPlan(null);
@@ -863,6 +890,157 @@ describe("codex-auth API", () => {
     expect(resp?.status).toBe(200);
     expect(account).not.toHaveProperty("plan");
     expect(account?.quota).toMatchObject({ weeklyPercent: 91, monthlyPercent: 33 });
+  });
+
+  test("GET /api/codex-auth/accounts exposes JWT subscription expiry separately from token expiry", async () => {
+    const accessToken = fakeCodexJwt({
+      exp: 1_800_000_000,
+      "https://api.openai.com/auth": {
+        chatgpt_plan_type: "plus",
+        chatgpt_subscription_active_until: 1_798_761_600,
+      },
+    });
+    const config = makeConfig({
+      codexAccounts: [{ id: "pool-subscription", email: "plus@example.test", plan: "plus", isMain: false }],
+    });
+    saveCodexAccountCredential("pool-subscription", {
+      accessToken,
+      refreshToken: "refresh-subscription",
+      expiresAt: 1_800_000_000_000,
+      chatgptAccountId: "acct-subscription",
+    });
+    updateAccountQuota("pool-subscription", 10);
+
+    const req = new Request("http://localhost/api/codex-auth/accounts");
+    const resp = await handleCodexAuthAPI(req, new URL(req.url), config);
+    const data = await resp!.json() as { accounts: CodexAuthAccountDto[] };
+    const account = data.accounts.find(row => row.id === "pool-subscription");
+
+    expect(account?.subscription).toMatchObject({
+      plan: "plus",
+      activeUntil: "2027-01-01T00:00:00.000Z",
+      source: "jwt",
+    });
+    expect(account?.subscription?.activeUntil).not.toBe(new Date(1_800_000_000_000).toISOString());
+  });
+
+  test("GET /api/codex-auth/accounts exposes the main account subscription observed while its claim is held", async () => {
+    const idToken = fakeCodexJwt({
+      "https://api.openai.com/auth": {
+        chatgpt_account_id: "acct-main-subscription",
+        chatgpt_plan_type: "plus",
+        chatgpt_subscription_active_until: 1_798_761_600,
+      },
+    });
+    writeFileSync(join(TEST_CODEX_HOME, "auth.json"), JSON.stringify({
+      tokens: {
+        id_token: idToken,
+        access_token: "main-subscription-access",
+        account_id: "acct-main-subscription",
+      },
+    }));
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      if (String(input).includes("/backend-api/wham/usage")) {
+        return Response.json({ email: "main@example.test", plan_type: "plus" });
+      }
+      return previousFetch(input);
+    }) as typeof fetch;
+
+    const req = new Request("http://localhost/api/codex-auth/accounts?refresh=1");
+    const resp = await handleCodexAuthAPI(req, new URL(req.url), makeConfig());
+    const data = await resp!.json() as { accounts: CodexAuthAccountDto[] };
+
+    expect(data.accounts.find(row => row.id === MAIN_CODEX_ACCOUNT_ID)?.subscription).toMatchObject({
+      plan: "plus",
+      activeUntil: "2027-01-01T00:00:00.000Z",
+      source: "jwt",
+    });
+  });
+
+  test("POST subscription refresh queries accounts-check and returns a sanitized snapshot", async () => {
+    const config = makeConfig();
+    seedPoolAccount(config, {
+      id: "pool-subscription-refresh",
+      email: "plus-refresh@example.test",
+      accessToken: "subscription-access",
+      chatgptAccountId: "acct-subscription-refresh",
+    });
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(input));
+      expect(url.pathname).toBe("/backend-api/accounts/check/v4-2023-04-27");
+      const headers = new Headers(init?.headers);
+      expect(headers.get("Authorization")).toBe("Bearer subscription-access");
+      expect(headers.get("ChatGPT-Account-Id")).toBe("acct-subscription-refresh");
+      return Response.json({
+        accounts: [{
+          account: { id: "acct-subscription-refresh", plan_type: "plus", is_default: true },
+          entitlement: { subscription_plan: "plus", expires_at: 1_798_761_600 },
+        }],
+      });
+    }) as typeof fetch;
+
+    const req = new Request("http://localhost/api/codex-auth/accounts/subscription/refresh", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "pool-subscription-refresh" }),
+    });
+    const resp = await handleCodexAuthAPI(req, new URL(req.url), config);
+
+    expect(resp!.status).toBe(200);
+    expect(await resp!.json()).toMatchObject({
+      ok: true,
+      subscription: {
+        plan: "plus",
+        activeUntil: "2027-01-01T00:00:00.000Z",
+        source: "accounts_check",
+      },
+    });
+  });
+
+  test("POST subscription refresh cannot publish an old credential result after replacement", async () => {
+    const config = makeConfig();
+    const accountId = "pool-subscription-replaced";
+    seedPoolAccount(config, {
+      id: accountId,
+      email: "plus-replaced@example.test",
+      accessToken: "subscription-access-old",
+      refreshToken: "subscription-refresh-old",
+      chatgptAccountId: "acct-subscription-old",
+    });
+    let markRequestStarted!: () => void;
+    let releaseResponse!: () => void;
+    const requestStarted = new Promise<void>(resolve => { markRequestStarted = resolve; });
+    const responseGate = new Promise<void>(resolve => { releaseResponse = resolve; });
+    globalThis.fetch = (async () => {
+      markRequestStarted();
+      await responseGate;
+      return Response.json({
+        accounts: [{
+          account: { id: "acct-subscription-old", plan_type: "plus", is_default: true },
+          entitlement: { subscription_plan: "plus", expires_at: 1_798_761_600 },
+        }],
+      });
+    }) as typeof fetch;
+
+    const req = new Request("http://localhost/api/codex-auth/accounts/subscription/refresh", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: accountId }),
+    });
+    const pending = handleCodexAuthAPI(req, new URL(req.url), config);
+    await requestStarted;
+    saveCodexAccountCredential(accountId, {
+      accessToken: "subscription-access-new",
+      refreshToken: "subscription-refresh-new",
+      expiresAt: Date.now() + 5 * 60_000,
+      chatgptAccountId: "acct-subscription-new",
+    });
+    releaseResponse();
+
+    const resp = await pending;
+    expect(resp!.status).toBe(200);
+    expect(await resp!.json()).toMatchObject({ ok: true, attempted: true, subscription: null });
+    expect(getCodexSubscriptionDto(accountId)).toBeNull();
   });
 
   test("GET /api/codex-auth/accounts exposes only 30d quota for go and free plans", async () => {

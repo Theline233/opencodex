@@ -63,7 +63,10 @@ export default function CodexAccountPool({ apiBase, accountModeState = null, ban
   // but stays inert (no load, no polling) whenever a shared controller was injected.
   const ownController = useCodexAccountPool(apiBase, !injectedController);
   const controller = injectedController ?? ownController;
-  const { accounts, activeId, loadState, switchingId, pauseUpdatingId, priorityUpdatingId, pausingExhausted, activePinnedId, load } = controller;
+  const {
+    accounts, activeId, loadState, switchingId, pauseUpdatingId, priorityUpdatingId,
+    pausingExhausted, activePinnedId, subscriptionRefreshingId, load,
+  } = controller;
   const [confirm, setConfirm] = useState<CodexAccountEntry | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -228,6 +231,14 @@ export default function CodexAccountPool({ apiBase, accountModeState = null, ban
     }
   };
 
+  const refreshSubscription = async (account: CodexAccountEntry) => {
+    const result = await controller.refreshSubscription(account.id);
+    if (!result.ok && result.reason === "busy") return;
+    showActionFeedback(t(result.ok
+      ? "codexAuth.subscriptionRefreshed"
+      : "codexAuth.subscriptionRefreshFailed"), !result.ok);
+  };
+
   const pauseExhausted = async () => {
     const result = await controller.pauseExhaustedAccounts();
     if (!result.ok && result.reason === "busy") return;
@@ -327,6 +338,8 @@ export default function CodexAccountPool({ apiBase, accountModeState = null, ban
             onOpenReset={openResetPopup}
             onCopyDoctor={showDoctorCopy ? copyDoctor : undefined}
             doctorCopyOutcomeFor={showDoctorCopy ? doctorCopy.outcomeFor : undefined}
+            subscriptionRefreshingId={subscriptionRefreshingId}
+            onRefreshSubscription={account => { void refreshSubscription(account); }}
           />
 
           <div className="section-sep">
@@ -363,6 +376,8 @@ export default function CodexAccountPool({ apiBase, accountModeState = null, ban
             onRemove={remove}
             onCopyDoctor={showDoctorCopy ? copyDoctor : undefined}
             doctorCopyOutcomeFor={showDoctorCopy ? doctorCopy.outcomeFor : undefined}
+            subscriptionRefreshingId={subscriptionRefreshingId}
+            onRefreshSubscription={account => { void refreshSubscription(account); }}
           />
         </>
       )}

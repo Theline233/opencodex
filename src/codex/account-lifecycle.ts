@@ -10,6 +10,7 @@ import { clearAccountNeedsReauth } from "./account-runtime-state";
 import { getMainChatgptAccountId } from "./auth-collision";
 import { MAIN_CODEX_ACCOUNT_ID, setMainAccountPlan } from "./main-account";
 import { clearAccountQuota } from "./quota";
+import { clearCodexSubscription } from "./subscription";
 import { clearCodexUpstreamHealthForAccount, clearThreadAccountMapForAccount } from "./routing";
 import { invalidateCodexWebSocketsForAccount } from "./websocket-registry";
 import { clearMainAccountCredentialPresence, clearMainAccountInfoCache } from "./main-account-cache";
@@ -37,6 +38,7 @@ export class CodexAccountDeleteRollbackError extends Error {
 export function purgeCodexAccountRuntimeState(accountId: string): void {
   clearAccountNeedsReauth(accountId);
   clearAccountQuota(accountId);
+  clearCodexSubscription(accountId);
   clearThreadAccountMapForAccount(accountId);
   clearCodexUpstreamHealthForAccount(accountId);
   if (accountId === MAIN_CODEX_ACCOUNT_ID) {

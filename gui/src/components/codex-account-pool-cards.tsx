@@ -15,6 +15,7 @@ import {
   oauthHealthShowsDoctor,
   oauthHealthShowsReauth,
 } from "../oauth-health-display";
+import { CodexSubscriptionStatus } from "./codex-subscription-status";
 
 export function CodexAccountPoolCards({
   pool,
@@ -36,6 +37,8 @@ export function CodexAccountPoolCards({
   onRemove,
   onCopyDoctor,
   doctorCopyOutcomeFor,
+  subscriptionRefreshingId,
+  onRefreshSubscription,
 }: {
   pool: CodexAccountEntry[];
   activeId: string | null;
@@ -63,6 +66,8 @@ export function CodexAccountPoolCards({
   onRemove: (id: string) => void;
   onCopyDoctor?: (accountId: string) => void;
   doctorCopyOutcomeFor?: (accountId: string) => "copied" | "unavailable" | null;
+  subscriptionRefreshingId: string | null;
+  onRefreshSubscription: (account: CodexAccountEntry) => void;
 }) {
   const t = useT();
   const isNext = (account: CodexAccountEntry) => !account.paused && activeId === account.id;
@@ -157,6 +162,12 @@ export function CodexAccountPoolCards({
               onChange={(priority) => onPriorityChange(a, priority)}
             />
           </div>
+          <CodexSubscriptionStatus
+            account={a}
+            refreshing={subscriptionRefreshingId === a.id}
+            refreshBusy={subscriptionRefreshingId !== null}
+            onRefresh={() => onRefreshSubscription(a)}
+          />
           {healthSummary && (
             <div className="card-sub faint">{healthSummary}</div>
           )}

@@ -15,8 +15,9 @@ test("the controller is the single data owner and exposes the agreed contract", 
   // Data layer (Q6): list / active / loading / switching plus the mutating actions.
   for (const member of [
     "accounts", "activeId", "loadState", "switchingId", "pauseUpdatingId", "priorityUpdatingId",
-    "pausingExhausted", "activeNeedsReauth", "activePinnedId",
+    "pausingExhausted", "activeNeedsReauth", "activePinnedId", "subscriptionRefreshingId",
     "load", "switchAccount", "setAccountPaused", "setAccountPriority", "pauseExhaustedAccounts",
+    "refreshSubscription",
     "saveAlias", "removeAccount", "syncAfterAccountAdded",
     // WP2 (260730_gui_hydration_loading_unify/010): progress is part of the contract, because a
     // forced quota refresh keeps `loadState` at "ready" and would otherwise be invisible.

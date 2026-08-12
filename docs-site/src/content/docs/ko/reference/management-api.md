@@ -211,6 +211,7 @@ Authorization: Bearer <admin-token>
 | `PUT /api/codex-auth/accounts/pause` | 계정 하나를 일시 중지하거나 재개합니다 | 400 잘못된 account/state; 404 누락된 account |
 | `PUT /api/codex-auth/accounts/pause-exhausted` | quota가 소진된 account를 일시 중지합니다 | mutation-lock 실패는 503이 됩니다 |
 | `POST /api/codex-auth/accounts/clear-cooldown` | account 하나 또는 모든 account의 runtime cooldown을 지웁니다 | 400 잘못된 id |
+| `POST /api/codex-auth/accounts/subscription/refresh` | 한 account의 Plus/subscription 메타데이터를 강제로 갱신합니다. 계정 목록의 `subscription.activeUntil`로 OAuth token 만료 및 quota와 별도로 반환됩니다 | 401 upstream 인증 실패; 404 알 수 없는 account; 503 busy |
 | `GET, PUT /api/codex-auth/active` | 활성 account를 읽거나 선택합니다 | 400 잘못되었거나 누락된 account; 409 paused/legacy-row 충돌 |
 | `PUT /api/codex-auth/auto-switch` | 자동 account 전환을 위한 quota threshold를 설정합니다 | 400 잘못된 threshold |
 | `PUT, PATCH /api/codex-auth/pool-strategy` | Codex account-pool 선택 전략을 업데이트합니다 | 400 잘못된 전략/구성 |

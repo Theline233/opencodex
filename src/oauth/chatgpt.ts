@@ -46,6 +46,95 @@ export function extractEmail(idToken?: string, accessToken?: string): string | u
   return undefined;
 }
 
+export interface ChatGPTSubscriptionClaims {
+  plan?: string;
+  activeUntil?: string;
+}
+
+function normalizedJwtScalar(value: unknown): string | undefined {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed || undefined;
+  }
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  return undefined;
+}
+
+function isRecordLike(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Extract the ChatGPT organization/workspace id carried by Codex OAuth JWTs.
+ *
+ * One ChatGPT identity can expose more than one organization. Keep this
+ * separate from `extractAccountId`: account-check responses are keyed by the
+ * organization in some deployments, while the account id remains the right
+ * fallback for request headers and legacy payloads.
+ */
+export function extractChatGPTOrganizationId(idToken?: string, accessToken?: string): string | undefined {
+  const organizationKeys = [
+    "organization_id",
+    "chatgpt_organization_id",
+    "chatgpt_org_id",
+    "org_id",
+    "poid",
+    "POID",
+  ];
+  for (const token of [idToken, accessToken]) {
+    if (!token) continue;
+    const payload = decodeJwtPayload(token);
+    if (!payload) continue;
+    const auth = payload["https://api.openai.com/auth"];
+    const sources = [
+      isRecordLike(auth) ? auth : undefined,
+      payload,
+    ];
+    for (const source of sources) {
+      if (!source) continue;
+      for (const key of organizationKeys) {
+        const value = normalizedJwtScalar(source[key]);
+        if (value) return value;
+      }
+      const organizations = source.organizations;
+      if (!Array.isArray(organizations)) continue;
+      const selected = organizations.find(item => isRecordLike(item) && item.is_default === true)
+        ?? organizations[0];
+      if (isRecordLike(selected)) {
+        const value = normalizedJwtScalar(selected.id);
+        if (value) return value;
+      }
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Extract the ChatGPT plan and subscription deadline carried by Codex OAuth JWTs.
+ *
+ * `activeUntil` intentionally remains a normalized scalar here. The subscription
+ * store owns timestamp validation/canonicalization, while this OAuth helper stays
+ * limited to claim lookup and never confuses the value with the JWT `exp` claim.
+ */
+export function extractChatGPTSubscriptionClaims(
+  idToken?: string,
+  accessToken?: string,
+): ChatGPTSubscriptionClaims | undefined {
+  let plan: string | undefined;
+  let activeUntil: string | undefined;
+  for (const token of [idToken, accessToken]) {
+    if (!token) continue;
+    const payload = decodeJwtPayload(token);
+    const auth = payload?.["https://api.openai.com/auth"];
+    if (!auth || typeof auth !== "object" || Array.isArray(auth)) continue;
+    const claims = auth as Record<string, unknown>;
+    plan ??= normalizedJwtScalar(claims.chatgpt_plan_type);
+    activeUntil ??= normalizedJwtScalar(claims.chatgpt_subscription_active_until);
+    if (plan && activeUntil) break;
+  }
+  return plan || activeUntil ? { ...(plan ? { plan } : {}), ...(activeUntil ? { activeUntil } : {}) } : undefined;
+}
+
 function credsFromToken(data: Record<string, unknown>): OAuthCredentials {
   const idToken = typeof data.id_token === "string" ? data.id_token : undefined;
   const accessToken = data.access_token as string;
