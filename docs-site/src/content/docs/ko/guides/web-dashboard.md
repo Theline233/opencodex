@@ -99,6 +99,9 @@ Dashboard의 **Sub-agent delegation** 선택기는 `injectionModel`과 선택적
 - WHAM이 `limit_window_seconds`를 제공하면 Codex Auth는 28일 이상인 primary window를 주간이 아닌
   30일 창으로 분류합니다. 기간이 없는 기존 응답은 이전과 동일하게 주간 창으로 해석합니다.
 - **Refresh quotas**는 계정 사용량을 즉시 다시 읽어 라우팅과 화면의 계정 카드가 같은 값을 보게 합니다.
+- 각 Codex account 카드에는 확인된 Plus/subscription 만료일도 표시됩니다. OAuth JWT를 먼저 읽고,
+  없을 때 **만료일 새로고침**으로 제한된 관리 조회를 수행할 수 있습니다. 실패하면 마지막 값을 유지하고
+  비강제 재시도를 30분 동안 억제합니다. OAuth token 만료나 quota reset 시간은 Plus 만료일로 사용하지 않습니다.
 - 풀 요청 로그에는 이메일 대신 `p3fa91c` 같은 불투명한 라벨을 사용합니다.
 
 Providers 개요는 Pool 모드 사용량을 표시 전용 가중 용량 추정치로 별도 요약하고, 현재 유효 계정의

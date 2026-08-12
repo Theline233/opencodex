@@ -75,6 +75,7 @@ opencodex state root does not undo those writes. Putting native Codex back is th
 | `~/.opencodex/config.json` | opencodex | Main config written by `ocx init` and the dashboard. Atomic temp-then-rename. |
 | `~/.opencodex/auth.json` | opencodex | OAuth tokens; not committed. Multiauth shape: `provider -> { activeAccountId, accounts[] }` (legacy single-credential values normalize on load; a one-time `auth.json.pre-multiauth` backup guards downgrades). ChatGPT scratch OAuth stays separate from the Codex account store; identity-less providers (kimi/kiro/cursor) replace their active slot. |
 | `~/.opencodex/codex-accounts.json` | opencodex | Hardened main-plus-added credential store used by `openai` in Pool mode. |
+| `~/.opencodex/codex-subscription-cache.json` | opencodex | Derived, token-free Plus/subscription plan and expiry snapshots keyed by account; stale rows are reconciled against live accounts. |
 | `~/.opencodex/catalog-backup.json` | opencodex | One-time pristine Codex catalog backup for restore; per-catalog copies are hashed variants (see [`03_catalog-and-subagents.md`](03_catalog-and-subagents.md)). |
 | `~/.opencodex/usage.jsonl` | opencodex | Append-only request usage log (0o600); request metadata + token counts only, never prompts or auth. |
 | `~/.opencodex/ocx.pid`, `runtime-port.json`, `system-env-port` | opencodex runtime | Live process identity and the port a client should reach; rewritten on start. |

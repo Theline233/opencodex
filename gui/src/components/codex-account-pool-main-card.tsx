@@ -14,6 +14,7 @@ import {
   oauthHealthShowsDoctor,
   oauthHealthShowsReauth,
 } from "../oauth-health-display";
+import { CodexSubscriptionStatus } from "./codex-subscription-status";
 
 export function CodexAccountPoolMainCard({
   t,
@@ -29,6 +30,8 @@ export function CodexAccountPoolMainCard({
   onOpenReset,
   onCopyDoctor,
   doctorCopyOutcomeFor,
+  subscriptionRefreshingId,
+  onRefreshSubscription,
 }: {
   t: TFn;
   main: CodexAccountEntry | undefined;
@@ -43,6 +46,8 @@ export function CodexAccountPoolMainCard({
   onOpenReset: (account: CodexAccountEntry) => void;
   onCopyDoctor?: (accountId: string) => void;
   doctorCopyOutcomeFor?: (accountId: string) => "copied" | "unavailable" | null;
+  subscriptionRefreshingId: string | null;
+  onRefreshSubscription: (account: CodexAccountEntry) => void;
 }) {
   const mainFallbackLabel = t("codexAuth.codexApp");
   const mainId = main?.id ?? "__main__";
@@ -54,6 +59,7 @@ export function CodexAccountPoolMainCard({
     paused: main?.paused ?? false,
     hasCredential: true,
     quota: main?.quota ?? null,
+    subscription: main?.subscription ?? null,
   };
   const showReauth = Boolean(main?.needsReauth) || oauthHealthShowsReauth(main?.health?.status);
   const inCooldown = oauthHealthIsCooldown(main?.health?.status);
@@ -116,6 +122,14 @@ export function CodexAccountPoolMainCard({
         <span className="card-right"><IconLock width={14} /> {t("codexAuth.appLogin")}</span>
       </div>
       <div className="card-sub">{main?.email || t("codexAuth.appLogin")}{main?.plan ? ` · ${main.plan}` : ""}</div>
+      {main && (
+        <CodexSubscriptionStatus
+          account={mainSwitchEntry}
+          refreshing={subscriptionRefreshingId === "__main__"}
+          refreshBusy={subscriptionRefreshingId !== null}
+          onRefresh={() => onRefreshSubscription(mainSwitchEntry)}
+        />
+      )}
       {healthSummary && (
         <div className="card-sub faint">{healthSummary}</div>
       )}

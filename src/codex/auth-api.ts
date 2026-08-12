@@ -46,6 +46,12 @@ import {
   type StoredAccountQuota,
   type WhamUsageResponse,
 } from "./quota";
+import {
+  getCodexSubscriptionDto,
+  observeCodexSubscriptionFromJwt,
+  refreshCodexSubscription,
+  type CodexSubscriptionDto,
+} from "./subscription";
 export {
   applyAccountQuotaFromUpstreamHeaders,
   clearAccountQuota,
@@ -54,7 +60,7 @@ export {
   setAccountQuotaFromParsed,
   updateAccountQuota,
 } from "./quota";
-import { extractAccountId, decodeJwtPayload } from "../oauth/chatgpt";
+import { extractAccountId, extractChatGPTOrganizationId, decodeJwtPayload } from "../oauth/chatgpt";
 import { getMainAccountPlan, MAIN_CODEX_ACCOUNT_ID, setMainAccountPlan } from "./main-account";
 import { captureConfigGeneration, registerStateSweepAfterTick } from "../lib/state-store-sweeper";
 import { reconcileLiveStateStores } from "../lib/state-store-registrations";
@@ -191,6 +197,7 @@ function poolAccountDto(
   quotaResult: PoolQuotaResult,
   hasCredential: boolean,
   paused: boolean,
+  subscription: CodexSubscriptionDto | null = getCodexSubscriptionDto(account.id),
 ): CodexAuthAccountDto {
   const quota = quotaForPlan(quotaResult.quota, account.plan);
   const needsReauth = !hasCredential || quotaResult.needsReauth || isAccountNeedsReauth(account.id);
@@ -204,6 +211,7 @@ function poolAccountDto(
     isMain: false,
     paused,
     quota: quota ? { ...quota } : null,
+    subscription,
     needsReauth,
     hasCredential,
     ...(quotaResult.quotaProbeSkipped ? { quotaProbeSkipped: true as const } : {}),
@@ -215,6 +223,8 @@ interface ResetCreditAuth {
   isMain: boolean;
   accessToken: string;
   chatgptAccountId: string;
+  credentialGeneration?: number;
+  idToken?: string;
   nativeMainLease?: AdmissionLease;
   nativeMainSharedClaimHeld?: true;
 }
@@ -242,7 +252,8 @@ async function withResetCreditAuth<T>(
             value: await operation({
               isMain: true,
               accessToken: tokens.access_token,
-              chatgptAccountId: tokens.account_id,
+              chatgptAccountId: extractAccountId(tokens.id_token, tokens.access_token) ?? tokens.account_id,
+              ...(tokens.id_token ? { idToken: tokens.id_token } : {}),
               nativeMainLease,
               nativeMainSharedClaimHeld: true,
             }),
@@ -270,7 +281,8 @@ async function withResetCreditAuth<T>(
     value: await operation({
       isMain: false,
       accessToken: cred.accessToken,
-      chatgptAccountId: cred.chatgptAccountId,
+      chatgptAccountId: extractAccountId(undefined, cred.accessToken) ?? cred.chatgptAccountId,
+      credentialGeneration: cred.generation,
     }),
   };
 }
@@ -525,6 +537,16 @@ async function fetchMainAccountInfoWhileOwned(
     return { info: preserved ?? EMPTY_MAIN_ACCOUNT_INFO, credentialChecked: true, hasCredential: false };
   }
   const tokens = tokenRead.tokens;
+  const subscriptionIdentityGeneration = captureMainAccountIdentityGeneration();
+  observeCodexSubscriptionFromJwt({
+    accountId: MAIN_CODEX_ACCOUNT_ID,
+    accessToken: tokens.access_token,
+    idToken: tokens.id_token,
+    chatgptAccountId: tokens.account_id,
+    mainIdentityGeneration: subscriptionIdentityGeneration,
+    writerGeneration,
+    isCurrent: () => isMainAccountIdentityGenerationLive(subscriptionIdentityGeneration),
+  });
   const requestAccountId = extractAccountId(tokens.id_token, tokens.access_token) ?? (tokens.account_id || null);
   const cached = getMainAccountInfoCache();
   if (!forceRefresh && cached && Date.now() - cached.ts < MAIN_CACHE_TTL) {
@@ -645,6 +667,7 @@ export interface CodexAuthAccountDto {
   isMain: boolean;
   paused: boolean;
   quota: (StoredAccountQuota | (Omit<StoredAccountQuota, "updatedAt"> & { updatedAt: number })) | null;
+  subscription: CodexSubscriptionDto | null;
   needsReauth?: boolean;
   hasCredential: boolean;
   health: OAuthAccountHealth;
@@ -1017,11 +1040,24 @@ export async function listCodexAuthAccountsSnapshot(
         { quota: null, needsReauth: true },
         false,
         isCodexAccountPaused(runtimeConfig, accountId),
+        null,
       )];
     }
     const resultGeneration = quotaResult.credentialGeneration ?? quotaResult.freshCredentialGeneration;
     const generationLive = resultGeneration === undefined
       || isCodexAccountGenerationLive(accountId, resultGeneration);
+    const subscription = generationLive
+      ? observeCodexSubscriptionFromJwt({
+        accountId,
+        accessToken: currentCredential.accessToken,
+        chatgptAccountId: currentCredential.chatgptAccountId,
+        organizationId: extractChatGPTOrganizationId(undefined, currentCredential.accessToken),
+        ...(resultGeneration !== undefined ? { credentialGeneration: resultGeneration } : {}),
+        isCurrent: resultGeneration === undefined
+          ? undefined
+          : () => isCodexAccountGenerationLive(accountId, resultGeneration),
+      })
+      : null;
     const effectiveQuotaResult = !generationLive
       ? { quota: null, needsReauth: false }
       : quotaResult;
@@ -1035,6 +1071,7 @@ export async function listCodexAuthAccountsSnapshot(
       effectiveQuotaResult,
       true,
       isCodexAccountPaused(runtimeConfig, accountId),
+      subscription,
     )];
   });
   const fetchedMainGeneration = mainResult.identityGeneration ?? captureMainAccountIdentityGeneration();
@@ -1049,6 +1086,7 @@ export async function listCodexAuthAccountsSnapshot(
     accountId: MAIN_CODEX_ACCOUNT_ID,
     needsReauth: mainNeedsReauth,
   });
+  const mainSubscription = mainSnapshotLive ? getCodexSubscriptionDto(MAIN_CODEX_ACCOUNT_ID) : null;
   const main: CodexAuthAccountDto = {
     id: MAIN_CODEX_ACCOUNT_ID,
     email: maskEmail(mainInfo.email) ?? "Codex App login",
@@ -1063,6 +1101,7 @@ export async function listCodexAuthAccountsSnapshot(
         updatedAt: getAccountQuota(MAIN_CODEX_ACCOUNT_ID)?.updatedAt ?? Date.now(),
       }, mainInfo.plan),
     } : null,
+    subscription: mainSubscription,
     ...oauthAccountHealthFields("codex", MAIN_CODEX_ACCOUNT_ID, mainHealth),
   };
   return {
@@ -1189,6 +1228,50 @@ export async function handleCodexAuthAPI(
     return jsonResponse({ accounts: await listCodexAuthAccounts(config, forceRefresh) });
   }
 
+  if (url.pathname === "/api/codex-auth/accounts/subscription/refresh" && req.method === "POST") {
+    const body = await req.json().catch(() => ({})) as { id?: unknown };
+    const accountId = typeof body.id === "string" ? body.id.trim() : "";
+    if (accountId !== MAIN_CODEX_ACCOUNT_ID && !isValidCodexAccountId(accountId)) {
+      return jsonResponse({ error: "Invalid account id format" }, 400);
+    }
+    const runtimeConfig = getRuntimeConfig(config);
+    if (accountId !== MAIN_CODEX_ACCOUNT_ID && !configuredPoolAccount(runtimeConfig, accountId)) {
+      return jsonResponse({ error: "Account not found" }, 404);
+    }
+
+    try {
+      const operation = await withResetCreditAuth(runtimeConfig, accountId, async auth => {
+        const credentialGeneration = auth.isMain ? undefined : auth.credentialGeneration;
+        const mainIdentityGeneration = auth.isMain ? captureMainAccountIdentityGeneration() : undefined;
+        const result = await refreshCodexSubscription({
+          accountId,
+          accessToken: auth.accessToken,
+          chatgptAccountId: auth.chatgptAccountId,
+          organizationId: extractChatGPTOrganizationId(auth.idToken, auth.accessToken),
+          force: true,
+          ...(credentialGeneration !== undefined ? { credentialGeneration } : {}),
+          ...(mainIdentityGeneration !== undefined ? { mainIdentityGeneration } : {}),
+          isCurrent: auth.isMain
+            ? () => isMainAccountIdentityGenerationLive(mainIdentityGeneration!)
+            : credentialGeneration === undefined
+              ? undefined
+              : () => isCodexAccountGenerationLive(accountId, credentialGeneration),
+        });
+        return jsonResponse(result, result.ok ? 200 : result.errorCode === "upstream_auth" ? 401 : 502);
+      });
+      return operation.ok ? operation.value : operation.response;
+    } catch (error) {
+      if (error instanceof CodexCredentialRefreshBusyError
+        || error instanceof CodexCredentialRefreshStaleError
+        || error instanceof CodexCredentialRefreshLockTimeoutError) {
+        const response = jsonResponse({ error: "server_busy", code: "server_busy" }, 503);
+        response.headers.set("Retry-After", "1");
+        return response;
+      }
+      return jsonResponse({ error: "Subscription refresh failed", code: "subscription_refresh_failed" }, 500);
+    }
+  }
+
   if (url.pathname === "/api/codex-auth/accounts" && req.method === "POST") {
     if (!isUnverifiedCodexImportEnabled()) return manualImportDisabledResponse();
 
@@ -1225,6 +1308,16 @@ export async function handleCodexAuthAPI(
       refreshToken: body.refreshToken,
       expiresAt: exp,
       chatgptAccountId: derivedAccountId,
+    });
+    const importedGeneration = readCodexAccountRecord(body.id)?.generation;
+    observeCodexSubscriptionFromJwt({
+      accountId: body.id,
+      accessToken: body.accessToken,
+      chatgptAccountId: derivedAccountId,
+      ...(importedGeneration !== undefined ? { credentialGeneration: importedGeneration } : {}),
+      isCurrent: importedGeneration === undefined
+        ? undefined
+        : () => isCodexAccountGenerationLive(body.id, importedGeneration),
     });
     markCodexAccountValidated(body.id, warmup.validatedAt);
     clearAccountNeedsReauth(body.id);
@@ -1698,6 +1791,16 @@ export async function handleCodexAuthAPI(
                   refreshToken: cred.refresh,
                   expiresAt: cred.expires,
                   chatgptAccountId: oauthAccountId,
+                });
+                const loginGeneration = readCodexAccountRecord(accountId)?.generation;
+                observeCodexSubscriptionFromJwt({
+                  accountId,
+                  accessToken: cred.access,
+                  chatgptAccountId: oauthAccountId,
+                  ...(loginGeneration !== undefined ? { credentialGeneration: loginGeneration } : {}),
+                  isCurrent: loginGeneration === undefined
+                    ? undefined
+                    : () => isCodexAccountGenerationLive(accountId, loginGeneration),
                 });
                 // A successful reauthentication replaces the credential generation. Do not let a
                 // failed optional WHAM probe make the replacement inherit quota from the old record.

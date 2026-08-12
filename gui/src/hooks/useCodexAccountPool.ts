@@ -26,6 +26,16 @@ export interface CodexAccountEntry {
   paused: boolean;
   hasCredential: boolean;
   quota: AccountQuota | null;
+  subscription?: {
+    plan?: string;
+    activeUntil?: string;
+    source?: "jwt" | "accounts_check" | "subscriptions";
+    observedAt: number;
+    lastAttemptAt?: number;
+    lastSuccessAt?: number;
+    nextRetryAt?: number;
+    lastErrorCode?: string;
+  } | null;
   needsReauth?: boolean;
   health?: { status: "healthy" | "cooldown" | "reauth_required" | "warning"; reason?: string; until?: string };
   healthLabel?: string;
@@ -68,12 +78,14 @@ export interface CodexAccountPoolController {
   switchingId: string | null;
   pauseUpdatingId: string | null;
   pausingExhausted: boolean;
+  subscriptionRefreshingId: string | null;
   activeNeedsReauth: boolean;
 
   load(refreshQuota?: boolean): Promise<boolean>;
   switchAccount(id: string | null): Promise<CodexAccountActionResult<{ activeId: string | null }>>;
   setAccountPaused(id: string, paused: boolean): Promise<CodexAccountActionResult>;
   pauseExhaustedAccounts(): Promise<CodexAccountActionResult<{ pausedCount: number }>>;
+  refreshSubscription(id: string): Promise<CodexAccountActionResult>;
   saveAlias(id: string, alias: string): Promise<CodexAccountActionResult>;
   removeAccount(id: string): Promise<CodexAccountActionResult>;
   syncAfterAccountAdded(): Promise<CodexAccountActionResult>;
@@ -100,6 +112,8 @@ export function useCodexAccountPool(apiBase: string, enabled = true): CodexAccou
   const [switchingId, setSwitchingId] = useState<string | null>(null);
   const [pauseUpdatingId, setPauseUpdatingId] = useState<string | null>(null);
   const [pausingExhausted, setPausingExhausted] = useState(false);
+  const [subscriptionRefreshingId, setSubscriptionRefreshingId] = useState<string | null>(null);
+  const subscriptionRefreshRef = useRef(false);
   // A counter, not a boolean: the initial load, the 30s poll, quota-fill retries and explicit
   // actions can all be in flight together, and an older one settling must not clear the
   // indicator while a newer forced refresh is still running.
@@ -403,6 +417,27 @@ export function useCodexAccountPool(apiBase: string, enabled = true): CodexAccou
     }
   }, [apiBase, load]);
 
+  const refreshSubscription = useCallback(async (id: string) => {
+    if (subscriptionRefreshRef.current) return { ok: false, reason: "busy" } as const;
+    subscriptionRefreshRef.current = true;
+    setSubscriptionRefreshingId(id);
+    try {
+      const response = await fetch(`${apiBase}/api/codex-auth/accounts/subscription/refresh`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      if (!response.ok) return { ok: false, reason: "request" } as const;
+      const reloaded = await load();
+      return reloaded ? ({ ok: true } as const) : ({ ok: false, reason: "reload" } as const);
+    } catch {
+      return { ok: false, reason: "request" } as const;
+    } finally {
+      subscriptionRefreshRef.current = false;
+      setSubscriptionRefreshingId(null);
+    }
+  }, [apiBase, load]);
+
   const removeAccount = useCallback(async (id: string) => {
     try {
       const response = await fetch(
@@ -439,11 +474,13 @@ export function useCodexAccountPool(apiBase: string, enabled = true): CodexAccou
     switchingId,
     pauseUpdatingId,
     pausingExhausted,
+    subscriptionRefreshingId,
     activeNeedsReauth,
     load,
     switchAccount,
     setAccountPaused,
     pauseExhaustedAccounts,
+    refreshSubscription,
     saveAlias,
     removeAccount,
     syncAfterAccountAdded,

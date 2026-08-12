@@ -95,6 +95,7 @@ describe("state-store sweeper", () => {
       "combo-warning-memos",
       "router-warning-memos",
       "codex-quota",
+      "codex-subscriptions",
       "provider-quota-history",
       "codex-routing-health",
       "model-cache-history",
