@@ -134,6 +134,9 @@ and other providers.
   OAuth JWT first; when it is missing, **Refresh expiry** performs a bounded management lookup. A failed
   lookup keeps the last result and suppresses non-forced retries for 30 minutes. OAuth token expiry and
   quota reset time are never treated as the Plus expiry.
+- **Refresh all expiries** runs the same lookup for every signed-in account with at most five concurrent
+  requests. One account failing does not stop the remaining accounts; the result reports succeeded and
+  failed counts, while individual account buttons remain available for targeted retries.
 - Pool request logs use opaque labels such as `p3fa91c`, never account emails.
 - Each account card also shows that stable log label, the observed 30-day token total, an approximate
   API-equivalent cost using currently configured display pricing, and the fraction of attempts with

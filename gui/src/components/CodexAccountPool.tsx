@@ -65,7 +65,7 @@ export default function CodexAccountPool({ apiBase, accountModeState = null, ban
   const controller = injectedController ?? ownController;
   const {
     accounts, activeId, loadState, switchingId, pauseUpdatingId, priorityUpdatingId,
-    pausingExhausted, activePinnedId, subscriptionRefreshingId, load,
+    pausingExhausted, activePinnedId, subscriptionRefreshingId, subscriptionsRefreshingAll, load,
   } = controller;
   const [confirm, setConfirm] = useState<CodexAccountEntry | null>(null);
   const [showAdd, setShowAdd] = useState(false);
@@ -239,6 +239,24 @@ export default function CodexAccountPool({ apiBase, accountModeState = null, ban
       : "codexAuth.subscriptionRefreshFailed"), !result.ok);
   };
 
+  const refreshAllSubscriptions = async () => {
+    const result = await controller.refreshAllSubscriptions();
+    if (!result.ok) {
+      if (result.reason === "busy") return;
+      showActionFeedback(t("codexAuth.subscriptionRefreshAllFailed"), true);
+      return;
+    }
+    showActionFeedback(result.failed > 0
+      ? t("codexAuth.subscriptionRefreshAllPartial", {
+        succeeded: String(result.succeeded),
+        failed: String(result.failed),
+      })
+      : result.total === 0
+        ? t("codexAuth.subscriptionRefreshAllNone")
+        : t("codexAuth.subscriptionRefreshAllSucceeded", { count: String(result.succeeded) }),
+    result.failed > 0);
+  };
+
   const pauseExhausted = async () => {
     const result = await controller.pauseExhaustedAccounts();
     if (!result.ok && result.reason === "busy") return;
@@ -302,8 +320,11 @@ export default function CodexAccountPool({ apiBase, accountModeState = null, ban
         actionFeedback={actionFeedback}
         actionFeedbackTone={actionFeedbackTone}
         pausingExhausted={pausingExhausted}
+        refreshingSubscriptions={subscriptionsRefreshingAll}
+        subscriptionRefreshBusy={subscriptionsRefreshingAll || subscriptionRefreshingId !== null}
         pauseBusy={pauseBusy}
         onRefresh={() => { void refreshQuotas(); }}
+        onRefreshSubscriptions={() => { void refreshAllSubscriptions(); }}
         onPauseExhausted={() => { void pauseExhausted(); }}
       />
 
@@ -339,6 +360,7 @@ export default function CodexAccountPool({ apiBase, accountModeState = null, ban
             onCopyDoctor={showDoctorCopy ? copyDoctor : undefined}
             doctorCopyOutcomeFor={showDoctorCopy ? doctorCopy.outcomeFor : undefined}
             subscriptionRefreshingId={subscriptionRefreshingId}
+            subscriptionRefreshBusy={subscriptionsRefreshingAll || subscriptionRefreshingId !== null}
             onRefreshSubscription={account => { void refreshSubscription(account); }}
           />
 
@@ -377,6 +399,7 @@ export default function CodexAccountPool({ apiBase, accountModeState = null, ban
             onCopyDoctor={showDoctorCopy ? copyDoctor : undefined}
             doctorCopyOutcomeFor={showDoctorCopy ? doctorCopy.outcomeFor : undefined}
             subscriptionRefreshingId={subscriptionRefreshingId}
+            subscriptionRefreshBusy={subscriptionsRefreshingAll || subscriptionRefreshingId !== null}
             onRefreshSubscription={account => { void refreshSubscription(account); }}
           />
         </>

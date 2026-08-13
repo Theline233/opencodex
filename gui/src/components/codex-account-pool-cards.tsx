@@ -38,6 +38,7 @@ export function CodexAccountPoolCards({
   onCopyDoctor,
   doctorCopyOutcomeFor,
   subscriptionRefreshingId,
+  subscriptionRefreshBusy,
   onRefreshSubscription,
 }: {
   pool: CodexAccountEntry[];
@@ -67,6 +68,7 @@ export function CodexAccountPoolCards({
   onCopyDoctor?: (accountId: string) => void;
   doctorCopyOutcomeFor?: (accountId: string) => "copied" | "unavailable" | null;
   subscriptionRefreshingId: string | null;
+  subscriptionRefreshBusy: boolean;
   onRefreshSubscription: (account: CodexAccountEntry) => void;
 }) {
   const t = useT();
@@ -165,7 +167,7 @@ export function CodexAccountPoolCards({
           <CodexSubscriptionStatus
             account={a}
             refreshing={subscriptionRefreshingId === a.id}
-            refreshBusy={subscriptionRefreshingId !== null}
+            refreshBusy={subscriptionRefreshBusy}
             onRefresh={() => onRefreshSubscription(a)}
           />
           {healthSummary && (

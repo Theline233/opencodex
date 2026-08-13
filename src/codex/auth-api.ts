@@ -78,7 +78,9 @@ import {
   getCodexSubscriptionDto,
   observeCodexSubscriptionFromJwt,
   refreshCodexSubscription,
+  type CodexSubscriptionErrorCode,
   type CodexSubscriptionDto,
+  type RefreshCodexSubscriptionResult,
 } from "./subscription";
 export {
   applyAccountQuotaFromUpstreamHeaders,
@@ -331,6 +333,127 @@ async function withResetCreditAuth<T>(
   };
 }
 
+type CodexSubscriptionRefreshFailureCode = CodexSubscriptionErrorCode
+  | "account_unavailable"
+  | "account_conflict"
+  | "server_busy"
+  | "subscription_refresh_failed";
+
+type CodexSubscriptionRefreshExecution =
+  | { kind: "result"; result: RefreshCodexSubscriptionResult }
+  | { kind: "response"; response: Response; errorCode: CodexSubscriptionRefreshFailureCode };
+
+export interface CodexSubscriptionBulkRefreshItem {
+  id: string;
+  ok: boolean;
+  attempted: boolean;
+  subscription: CodexSubscriptionDto | null;
+  errorCode?: CodexSubscriptionRefreshFailureCode;
+}
+
+function subscriptionRefreshAuthFailureCode(status: number): CodexSubscriptionRefreshFailureCode {
+  if (status === 401) return "upstream_auth";
+  if (status === 409) return "account_conflict";
+  if (status === 503) return "server_busy";
+  if (status === 400 || status === 404) return "account_unavailable";
+  return "subscription_refresh_failed";
+}
+
+function subscriptionRefreshExceptionResponse(error: unknown): CodexSubscriptionRefreshExecution {
+  if (error instanceof TokenRefreshError) {
+    return {
+      kind: "response",
+      response: jsonResponse({ error: "Subscription authentication failed", code: "upstream_auth" }, 401),
+      errorCode: "upstream_auth",
+    };
+  }
+  if (error instanceof CodexCredentialGenerationConflictError) {
+    return {
+      kind: "response",
+      response: jsonResponse({ error: "Account changed during subscription refresh", code: "account_conflict" }, 409),
+      errorCode: "account_conflict",
+    };
+  }
+  if (error instanceof CodexCredentialRefreshBusyError
+    || error instanceof CodexCredentialRefreshStaleError
+    || error instanceof CodexCredentialRefreshLockTimeoutError) {
+    const response = jsonResponse({ error: "server_busy", code: "server_busy" }, 503);
+    response.headers.set("Retry-After", "1");
+    return { kind: "response", response, errorCode: "server_busy" };
+  }
+  return {
+    kind: "response",
+    response: jsonResponse({ error: "Subscription refresh failed", code: "subscription_refresh_failed" }, 500),
+    errorCode: "subscription_refresh_failed",
+  };
+}
+
+async function executeCodexSubscriptionRefresh(
+  runtimeConfig: OcxConfig,
+  accountId: string,
+  force: boolean,
+): Promise<CodexSubscriptionRefreshExecution> {
+  try {
+    const operation = await withResetCreditAuth(runtimeConfig, accountId, async auth => {
+      const credentialGeneration = auth.isMain ? undefined : auth.credentialGeneration;
+      const mainIdentityGeneration = auth.isMain ? captureMainAccountIdentityGeneration() : undefined;
+      return refreshCodexSubscription({
+        accountId,
+        accessToken: auth.accessToken,
+        chatgptAccountId: auth.chatgptAccountId,
+        organizationId: extractChatGPTOrganizationId(auth.idToken, auth.accessToken),
+        force,
+        ...(credentialGeneration !== undefined ? { credentialGeneration } : {}),
+        ...(mainIdentityGeneration !== undefined ? { mainIdentityGeneration } : {}),
+        isCurrent: auth.isMain
+          ? () => isMainAccountIdentityGenerationLive(mainIdentityGeneration!)
+          : credentialGeneration === undefined
+            ? undefined
+            : () => isCodexAccountGenerationLive(accountId, credentialGeneration),
+      });
+    });
+    if (!operation.ok) {
+      return {
+        kind: "response",
+        response: operation.response,
+        errorCode: subscriptionRefreshAuthFailureCode(operation.response.status),
+      };
+    }
+    return { kind: "result", result: operation.value };
+  } catch (error) {
+    return subscriptionRefreshExceptionResponse(error);
+  }
+}
+
+function subscriptionBulkItem(
+  accountId: string,
+  execution: CodexSubscriptionRefreshExecution,
+): CodexSubscriptionBulkRefreshItem {
+  if (execution.kind === "response") {
+    return {
+      id: accountId,
+      ok: false,
+      attempted: false,
+      subscription: getCodexSubscriptionDto(accountId),
+      errorCode: execution.errorCode,
+    };
+  }
+  return { id: accountId, ...execution.result };
+}
+
+function subscriptionRefreshAccountIds(runtimeConfig: OcxConfig): string[] {
+  const ids = readCodexTokensResult().status === "ok" ? [MAIN_CODEX_ACCOUNT_ID] : [];
+  const seen = new Set(ids);
+  for (const account of runtimeConfig.codexAccounts ?? []) {
+    if (!isSelectableCodexPoolAccount(account)
+      || seen.has(account.id)
+      || !getCodexAccountCredential(account.id)) continue;
+    seen.add(account.id);
+    ids.push(account.id);
+  }
+  return ids;
+}
+
 function safeResetCreditsDto(input: unknown): { credits: { granted_at: string; expires_at: string }[]; available_count?: number } {
   const obj = typeof input === "object" && input !== null ? input as Record<string, unknown> : {};
   const rawCredits = Array.isArray(obj.credits) ? obj.credits : [];
@@ -443,6 +566,7 @@ function expireCodexAuthFlow(flowId: string | null, error = "Login cancelled"): 
 const MAIN_CACHE_TTL = 5 * 60_000;
 const POOL_CACHE_TTL = 5 * 60_000;
 const POOL_QUOTA_REFRESH_CONCURRENCY = 4;
+const CODEX_SUBSCRIPTION_REFRESH_MAX_CONCURRENT = 5;
 
 function nonEmptyPlan(value: unknown): string | null {
   return codexPlanValue(value) ?? null;
@@ -1406,6 +1530,28 @@ export async function handleCodexAuthAPI(
     return jsonResponse({ accounts: await listCodexAuthAccounts(config, forceRefresh) });
   }
 
+  if (url.pathname === "/api/codex-auth/accounts/subscription/refresh-all" && req.method === "POST") {
+    const runtimeConfig = getRuntimeConfig(config);
+    const accountIds = subscriptionRefreshAccountIds(runtimeConfig);
+    const results = await mapWithConcurrency(
+      accountIds,
+      CODEX_SUBSCRIPTION_REFRESH_MAX_CONCURRENT,
+      async accountId => subscriptionBulkItem(
+        accountId,
+        await executeCodexSubscriptionRefresh(runtimeConfig, accountId, false),
+      ),
+    );
+    const succeeded = results.filter(result => result.ok).length;
+    const failed = results.length - succeeded;
+    return jsonResponse({
+      ok: failed === 0,
+      total: results.length,
+      succeeded,
+      failed,
+      results,
+    });
+  }
+
   if (url.pathname === "/api/codex-auth/accounts/subscription/refresh" && req.method === "POST") {
     const body = await req.json().catch(() => ({})) as { id?: unknown };
     const accountId = typeof body.id === "string" ? body.id.trim() : "";
@@ -1417,37 +1563,10 @@ export async function handleCodexAuthAPI(
       return jsonResponse({ error: "Account not found" }, 404);
     }
 
-    try {
-      const operation = await withResetCreditAuth(runtimeConfig, accountId, async auth => {
-        const credentialGeneration = auth.isMain ? undefined : auth.credentialGeneration;
-        const mainIdentityGeneration = auth.isMain ? captureMainAccountIdentityGeneration() : undefined;
-        const result = await refreshCodexSubscription({
-          accountId,
-          accessToken: auth.accessToken,
-          chatgptAccountId: auth.chatgptAccountId,
-          organizationId: extractChatGPTOrganizationId(auth.idToken, auth.accessToken),
-          force: true,
-          ...(credentialGeneration !== undefined ? { credentialGeneration } : {}),
-          ...(mainIdentityGeneration !== undefined ? { mainIdentityGeneration } : {}),
-          isCurrent: auth.isMain
-            ? () => isMainAccountIdentityGenerationLive(mainIdentityGeneration!)
-            : credentialGeneration === undefined
-              ? undefined
-              : () => isCodexAccountGenerationLive(accountId, credentialGeneration),
-        });
-        return jsonResponse(result, result.ok ? 200 : result.errorCode === "upstream_auth" ? 401 : 502);
-      });
-      return operation.ok ? operation.value : operation.response;
-    } catch (error) {
-      if (error instanceof CodexCredentialRefreshBusyError
-        || error instanceof CodexCredentialRefreshStaleError
-        || error instanceof CodexCredentialRefreshLockTimeoutError) {
-        const response = jsonResponse({ error: "server_busy", code: "server_busy" }, 503);
-        response.headers.set("Retry-After", "1");
-        return response;
-      }
-      return jsonResponse({ error: "Subscription refresh failed", code: "subscription_refresh_failed" }, 500);
-    }
+    const execution = await executeCodexSubscriptionRefresh(runtimeConfig, accountId, true);
+    if (execution.kind === "response") return execution.response;
+    const result = execution.result;
+    return jsonResponse(result, result.ok ? 200 : result.errorCode === "upstream_auth" ? 401 : 502);
   }
 
   if (url.pathname === "/api/codex-auth/accounts" && req.method === "POST") {

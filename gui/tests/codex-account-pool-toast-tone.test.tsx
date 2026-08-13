@@ -43,6 +43,7 @@ function makeController(overrides: Partial<CodexAccountPoolController> = {}): Co
     priorityUpdatingId: null,
     pausingExhausted: false,
     subscriptionRefreshingId: null,
+    subscriptionsRefreshingAll: false,
     activeNeedsReauth: false,
     activePinnedId: null,
     load: async () => true,
@@ -51,6 +52,7 @@ function makeController(overrides: Partial<CodexAccountPoolController> = {}): Co
     setAccountPriority: async () => ({ ok: true }),
     pauseExhaustedAccounts: async () => ({ ok: true, pausedCount: 0 }),
     refreshSubscription: async () => ({ ok: true }),
+    refreshAllSubscriptions: async () => ({ ok: true, total: 2, succeeded: 2, failed: 0 }),
     saveAlias: async () => ({ ok: true }),
     removeAccount: async () => ({ ok: false, reason: "request" }),
     syncAfterAccountAdded: async () => ({ ok: true }),
@@ -263,4 +265,27 @@ test("successful redeem clears a stale error toast tone", async () => {
 
   expect(host.querySelector(".codex-auth-page-head__feedback.is-err")).toBeNull();
   expect(host.querySelector(".codex-auth-page-head__feedback.is-ok")).toBeTruthy();
+});
+
+test("bulk subscription refresh reports partial success from one server request", async () => {
+  let calls = 0;
+  await mountPool(makeController({
+    refreshAllSubscriptions: async () => {
+      calls += 1;
+      return { ok: true, total: 2, succeeded: 1, failed: 1 };
+    },
+  }));
+
+  const refreshAll = [...host.querySelectorAll("button")].find((button) => (
+    (button.textContent ?? "").includes("Refresh all expiries")
+  ));
+  expect(refreshAll).toBeTruthy();
+  await act(async () => {
+    refreshAll!.dispatchEvent(new win.MouseEvent("click", { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  });
+
+  expect(calls).toBe(1);
+  const feedback = host.querySelector(".codex-auth-page-head__feedback.is-err");
+  expect(feedback?.textContent).toContain("1 succeeded, 1 failed");
 });

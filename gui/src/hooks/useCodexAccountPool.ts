@@ -67,6 +67,12 @@ export type CodexAccountActionResult<T extends object = Record<never, never>> =
   | ({ ok: true } & T)
   | { ok: false; reason: "busy" | "request" | "reload" };
 
+export interface CodexSubscriptionBulkRefreshSummary {
+  total: number;
+  succeeded: number;
+  failed: number;
+}
+
 /**
  * The auto-switch threshold arrives on the same /active response as the account list.
  * The presentation layer owns that setting's UI state, so it subscribes here instead of
@@ -98,6 +104,7 @@ export interface CodexAccountPoolController {
   priorityUpdatingId: string | null;
   pausingExhausted: boolean;
   subscriptionRefreshingId: string | null;
+  subscriptionsRefreshingAll: boolean;
   activeNeedsReauth: boolean;
   /**
    * The account carrying the pin, which is not always the active one: under round-robin
@@ -113,6 +120,7 @@ export interface CodexAccountPoolController {
   setAccountPriority(id: string, priority: number | null): Promise<CodexAccountActionResult>;
   pauseExhaustedAccounts(): Promise<CodexAccountActionResult<{ pausedCount: number }>>;
   refreshSubscription(id: string): Promise<CodexAccountActionResult>;
+  refreshAllSubscriptions(): Promise<CodexAccountActionResult<CodexSubscriptionBulkRefreshSummary>>;
   saveAlias(id: string, alias: string): Promise<CodexAccountActionResult>;
   removeAccount(id: string): Promise<CodexAccountActionResult<CodexAccountMutationCompletion>>;
   syncAfterAccountAdded(): Promise<CodexAccountActionResult>;
@@ -162,6 +170,7 @@ export function useCodexAccountPool(apiBase: string, enabled = true): CodexAccou
   const [pausingExhausted, setPausingExhausted] = useState(false);
   const [activePinnedId, setActivePinnedId] = useState<string | null>(null);
   const [subscriptionRefreshingId, setSubscriptionRefreshingId] = useState<string | null>(null);
+  const [subscriptionsRefreshingAll, setSubscriptionsRefreshingAll] = useState(false);
   const subscriptionRefreshRef = useRef(false);
   // A counter, not a boolean: the initial load, the 30s poll, quota-fill retries and explicit
   // actions can all be in flight together, and an older one settling must not clear the
@@ -563,6 +572,48 @@ export function useCodexAccountPool(apiBase: string, enabled = true): CodexAccou
     }
   }, [apiBase, load]);
 
+  const refreshAllSubscriptions = useCallback(async () => {
+    if (subscriptionRefreshRef.current) return { ok: false, reason: "busy" } as const;
+    subscriptionRefreshRef.current = true;
+    setSubscriptionsRefreshingAll(true);
+    try {
+      const response = await fetch(`${apiBase}/api/codex-auth/accounts/subscription/refresh-all`, {
+        method: "POST",
+      });
+      if (!response.ok) return { ok: false, reason: "request" } as const;
+      const raw = await response.json().catch(() => ({}));
+      const payload = (raw && typeof raw === "object" ? raw : {}) as {
+        total?: number;
+        succeeded?: number;
+        failed?: number;
+        results?: Array<{ id?: string; subscription?: CodexAccountEntry["subscription"] }>;
+      };
+      const refreshed = new Map(
+        (payload.results ?? [])
+          .filter((item): item is { id: string; subscription?: CodexAccountEntry["subscription"] } => (
+            typeof item.id === "string"
+          ))
+          .map(item => [item.id, item.subscription ?? null]),
+      );
+      setAccounts(current => current.map(account => {
+        const id = account.isMain ? "__main__" : account.id;
+        return refreshed.has(id) ? { ...account, subscription: refreshed.get(id) ?? null } : account;
+      }));
+      void load();
+      return {
+        ok: true,
+        total: typeof payload.total === "number" ? payload.total : refreshed.size,
+        succeeded: typeof payload.succeeded === "number" ? payload.succeeded : 0,
+        failed: typeof payload.failed === "number" ? payload.failed : 0,
+      } as const;
+    } catch {
+      return { ok: false, reason: "request" } as const;
+    } finally {
+      subscriptionRefreshRef.current = false;
+      setSubscriptionsRefreshingAll(false);
+    }
+  }, [apiBase, load]);
+
   const removeAccount = useCallback(async (id: string) => {
     try {
       const response = await fetch(
@@ -614,6 +665,7 @@ export function useCodexAccountPool(apiBase: string, enabled = true): CodexAccou
     priorityUpdatingId,
     pausingExhausted,
     subscriptionRefreshingId,
+    subscriptionsRefreshingAll,
     activeNeedsReauth,
     activePinnedId,
     load,
@@ -622,6 +674,7 @@ export function useCodexAccountPool(apiBase: string, enabled = true): CodexAccou
     setAccountPriority,
     pauseExhaustedAccounts,
     refreshSubscription,
+    refreshAllSubscriptions,
     saveAlias,
     removeAccount,
     syncAfterAccountAdded,

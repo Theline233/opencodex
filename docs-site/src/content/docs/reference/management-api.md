@@ -247,6 +247,7 @@ manager. Its routes are:
 | `PUT /api/codex-auth/accounts/pause-exhausted` | Pause accounts whose quota is exhausted | Mutation-lock failures become 503 |
 | `POST /api/codex-auth/accounts/clear-cooldown` | Clear runtime cooldown for one account or all accounts | 400 invalid id |
 | `POST /api/codex-auth/accounts/subscription/refresh` | Force-refresh one account's Plus/subscription metadata; the account list exposes it as `subscription.activeUntil`, separate from OAuth token expiry and quota | 401 upstream authentication failed; 404 unknown account; 503 busy |
+| `POST /api/codex-auth/accounts/subscription/refresh-all` | Refresh every signed-in account with at most five concurrent lookups; returns ordered per-account results plus `total`, `succeeded`, and `failed` counts | Individual failures are reported in `results` without aborting the batch |
 | `GET, PUT /api/codex-auth/active` | Read or select the active account | 400 invalid or missing account; 409 paused/legacy-row conflict |
 | `PUT /api/codex-auth/auto-switch` | Set the quota threshold for automatic account switching | 400 invalid threshold |
 | `PUT, PATCH /api/codex-auth/pool-strategy` | Update Codex account-pool selection strategy | 400 invalid strategy/config |

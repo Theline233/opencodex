@@ -214,6 +214,7 @@ Authorization: Bearer <admin-token>
 | `PUT /api/codex-auth/accounts/pause-exhausted` | 暂停配额已耗尽的账户 | 变更锁失败会变成 503 |
 | `POST /api/codex-auth/accounts/clear-cooldown` | 清除一个账户或所有账户的运行时冷却 | 400 id 无效 |
 | `POST /api/codex-auth/accounts/subscription/refresh` | 强制刷新一个账户的 Plus/订阅元数据；账户列表通过 `subscription.activeUntil` 返回，且与 OAuth 令牌到期和配额相互独立 | 401 上游认证失败；404 未知账户；503 忙碌 |
+| `POST /api/codex-auth/accounts/subscription/refresh-all` | 最多以 5 个并发查询刷新所有已登录账户；按顺序返回逐账户结果及 `total`、`succeeded`、`failed` 汇总 | 单个账户失败会记录在 `results` 中，不会中断整批 |
 | `GET, PUT /api/codex-auth/active` | 读取或选择当前活跃账户 | 400 账户无效或缺失；409 暂停/旧行冲突 |
 | `PUT /api/codex-auth/auto-switch` | 设置自动切换账户的配额阈值 | 400 阈值无效 |
 | `PUT, PATCH /api/codex-auth/pool-strategy` | 更新 Codex 账户池选择策略 | 400 策略/配置无效 |
