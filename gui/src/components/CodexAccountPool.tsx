@@ -231,14 +231,6 @@ export default function CodexAccountPool({ apiBase, accountModeState = null, ban
     }
   };
 
-  const refreshSubscription = async (account: CodexAccountEntry) => {
-    const result = await controller.refreshSubscription(account.id);
-    if (!result.ok && result.reason === "busy") return;
-    showActionFeedback(t(result.ok
-      ? "codexAuth.subscriptionRefreshed"
-      : "codexAuth.subscriptionRefreshFailed"), !result.ok);
-  };
-
   const refreshAllSubscriptions = async () => {
     const result = await controller.refreshAllSubscriptions();
     if (!result.ok) {
@@ -359,9 +351,6 @@ export default function CodexAccountPool({ apiBase, accountModeState = null, ban
             onOpenReset={openResetPopup}
             onCopyDoctor={showDoctorCopy ? copyDoctor : undefined}
             doctorCopyOutcomeFor={showDoctorCopy ? doctorCopy.outcomeFor : undefined}
-            subscriptionRefreshingId={subscriptionRefreshingId}
-            subscriptionRefreshBusy={subscriptionsRefreshingAll || subscriptionRefreshingId !== null}
-            onRefreshSubscription={account => { void refreshSubscription(account); }}
           />
 
           <div className="section-sep">
@@ -398,9 +387,6 @@ export default function CodexAccountPool({ apiBase, accountModeState = null, ban
             onRemove={remove}
             onCopyDoctor={showDoctorCopy ? copyDoctor : undefined}
             doctorCopyOutcomeFor={showDoctorCopy ? doctorCopy.outcomeFor : undefined}
-            subscriptionRefreshingId={subscriptionRefreshingId}
-            subscriptionRefreshBusy={subscriptionsRefreshingAll || subscriptionRefreshingId !== null}
-            onRefreshSubscription={account => { void refreshSubscription(account); }}
           />
         </>
       )}

@@ -38,9 +38,6 @@ export function CodexAccountPoolCards({
   onRemove,
   onCopyDoctor,
   doctorCopyOutcomeFor,
-  subscriptionRefreshingId,
-  subscriptionRefreshBusy,
-  onRefreshSubscription,
 }: {
   pool: CodexAccountEntry[];
   activeId: string | null;
@@ -68,9 +65,6 @@ export function CodexAccountPoolCards({
   onRemove: (id: string) => void;
   onCopyDoctor?: (accountId: string) => void;
   doctorCopyOutcomeFor?: (accountId: string) => "copied" | "unavailable" | null;
-  subscriptionRefreshingId: string | null;
-  subscriptionRefreshBusy: boolean;
-  onRefreshSubscription: (account: CodexAccountEntry) => void;
 }) {
   const t = useT();
   const isNext = (account: CodexAccountEntry) => !account.paused && activeId === account.id;
