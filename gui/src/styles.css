@@ -1242,6 +1242,42 @@ dialog.modal-overlay::backdrop {
 .card-head { display: flex; align-items: center; gap: 8px; padding: 10px 16px 4px; flex-wrap: wrap; min-width: 0; }
 .card-head strong { min-width: 0; overflow-wrap: anywhere; }
 .card-sub { font-size: var(--text-label); line-height: var(--leading-body); color: var(--muted); padding: 0 16px 8px; min-width: 0; overflow-wrap: anywhere; }
+.codex-subscription-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 0 16px 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--raised);
+  color: var(--text);
+}
+.codex-subscription-status--active {
+  border-color: color-mix(in srgb, var(--green) 38%, var(--border));
+  background: color-mix(in srgb, var(--green-soft) 72%, var(--surface));
+}
+.codex-subscription-status--urgent {
+  border-color: color-mix(in srgb, var(--amber) 52%, var(--border));
+  background: color-mix(in srgb, var(--amber-soft) 78%, var(--surface));
+}
+.codex-subscription-status--expired {
+  border-color: color-mix(in srgb, var(--red) 48%, var(--border));
+  background: color-mix(in srgb, var(--red-soft) 76%, var(--surface));
+}
+.codex-subscription-status--unknown { color: var(--muted); }
+.codex-subscription-status__label { flex: 0 0 auto; font-weight: var(--weight-semibold); }
+.codex-subscription-status--active .codex-subscription-status__label { background: var(--green-soft); color: var(--green); }
+.codex-subscription-status--urgent .codex-subscription-status__label { background: var(--amber-soft); color: var(--amber); }
+.codex-subscription-status--expired .codex-subscription-status__label { background: var(--red-soft); color: var(--red); }
+.codex-subscription-status__date { font-size: var(--text-label); letter-spacing: 0.01em; }
+.codex-subscription-status__relative { color: var(--muted); font-size: var(--text-caption); }
+.codex-subscription-status__unknown { font-size: var(--text-label); }
+@media (max-width: 560px) {
+  .codex-subscription-status { align-items: flex-start; }
+  .codex-subscription-status__relative { flex-basis: 100%; padding-left: 2px; }
+}
 .card-active { border-color: var(--accent-ring); }
 .card-right { margin-left: auto; display: flex; align-items: center; gap: 4px; font-size: var(--text-caption); color: var(--faint); }
 .btn-icon-danger.card-right {

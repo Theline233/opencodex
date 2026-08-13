@@ -31,9 +31,6 @@ export function CodexAccountPoolMainCard({
   onOpenReset,
   onCopyDoctor,
   doctorCopyOutcomeFor,
-  subscriptionRefreshingId,
-  subscriptionRefreshBusy,
-  onRefreshSubscription,
 }: {
   t: TFn;
   main: CodexAccountEntry | undefined;
@@ -48,9 +45,6 @@ export function CodexAccountPoolMainCard({
   onOpenReset: (account: CodexAccountEntry) => void;
   onCopyDoctor?: (accountId: string) => void;
   doctorCopyOutcomeFor?: (accountId: string) => "copied" | "unavailable" | null;
-  subscriptionRefreshingId: string | null;
-  subscriptionRefreshBusy: boolean;
-  onRefreshSubscription: (account: CodexAccountEntry) => void;
 }) {
   const mainFallbackLabel = t("codexAuth.codexApp");
   const mainId = main?.id ?? "__main__";
@@ -128,12 +122,7 @@ export function CodexAccountPoolMainCard({
       </div>
       <div className="card-sub">{main?.email || t("codexAuth.appLogin")}{main?.plan ? ` · ${main.plan}` : ""}</div>
       {main && (
-        <CodexSubscriptionStatus
-          account={mainSwitchEntry}
-          refreshing={subscriptionRefreshingId === "__main__"}
-          refreshBusy={subscriptionRefreshBusy}
-          onRefresh={() => onRefreshSubscription(mainSwitchEntry)}
-        />
+        <CodexSubscriptionStatus account={mainSwitchEntry} />
       )}
       {main && <CodexAccountUsage7d account={mainSwitchEntry} />}
       {healthSummary && (
