@@ -121,6 +121,9 @@ The **Codex Auth** page manages the native ChatGPT/Codex route:
   OAuth JWT first; when it is missing, **Refresh expiry** performs a bounded management lookup. A failed
   lookup keeps the last result and suppresses non-forced retries for 30 minutes. OAuth token expiry and
   quota reset time are never treated as the Plus expiry.
+- **Refresh all expiries** runs the same lookup for every signed-in account with at most five concurrent
+  requests. One account failing does not stop the remaining accounts; the result reports succeeded and
+  failed counts, while individual account buttons remain available for targeted retries.
 - Pool request logs use opaque labels such as `p3fa91c`, never account emails.
 
 The Providers overview separately summarizes Pool-mode usage as a display-only weighted capacity

@@ -989,6 +989,124 @@ describe("codex-auth API", () => {
     expect(getCodexSubscriptionDto(accountId)).toBeNull();
   });
 
+  test("POST subscription refresh-all limits concurrency, preserves order, and isolates failures", async () => {
+    const config = makeConfig();
+    const accountIds = Array.from({ length: 7 }, (_, index) => `pool-subscription-bulk-${index + 1}`);
+    for (const [index, id] of accountIds.entries()) {
+      seedPoolAccount(config, {
+        id,
+        email: `plus-bulk-${index + 1}@example.test`,
+        accessToken: `subscription-access-bulk-${index + 1}`,
+        refreshToken: `subscription-refresh-bulk-${index + 1}`,
+        chatgptAccountId: `acct-subscription-bulk-${index + 1}`,
+      });
+    }
+
+    let activeRequests = 0;
+    let maxActiveRequests = 0;
+    let startedRequests = 0;
+    let markFiveStarted!: () => void;
+    let releaseResponses!: () => void;
+    const fiveStarted = new Promise<void>(resolve => { markFiveStarted = resolve; });
+    const responseGate = new Promise<void>(resolve => { releaseResponses = resolve; });
+    const requestedAccountIds: string[] = [];
+    globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const chatgptAccountId = new Headers(init?.headers).get("ChatGPT-Account-Id") ?? "";
+      requestedAccountIds.push(chatgptAccountId);
+      activeRequests += 1;
+      maxActiveRequests = Math.max(maxActiveRequests, activeRequests);
+      startedRequests += 1;
+      if (startedRequests === 5) markFiveStarted();
+      await responseGate;
+      activeRequests -= 1;
+      if (chatgptAccountId === "acct-subscription-bulk-3") {
+        return Response.json({ error: { code: "invalid_token" } }, { status: 401 });
+      }
+      return Response.json({
+        accounts: [{
+          account: { id: chatgptAccountId, plan_type: "plus", is_default: true },
+          entitlement: { subscription_plan: "plus", expires_at: 1_798_761_600 },
+        }],
+      });
+    }) as typeof fetch;
+
+    const req = new Request("http://localhost/api/codex-auth/accounts/subscription/refresh-all", {
+      method: "POST",
+    });
+    const pending = handleCodexAuthAPI(req, new URL(req.url), config);
+    await fiveStarted;
+    expect(requestedAccountIds).toHaveLength(5);
+    releaseResponses();
+
+    const resp = await pending;
+    const payload = await resp!.json() as {
+      ok: boolean;
+      total: number;
+      succeeded: number;
+      failed: number;
+      results: Array<{ id: string; ok: boolean; errorCode?: string }>;
+    };
+    expect(resp!.status).toBe(200);
+    expect(maxActiveRequests).toBe(5);
+    expect(requestedAccountIds).toHaveLength(7);
+    expect(payload).toMatchObject({ ok: false, total: 7, succeeded: 6, failed: 1 });
+    expect(payload.results.map(result => result.id)).toEqual(accountIds);
+    expect(payload.results[2]).toMatchObject({
+      id: "pool-subscription-bulk-3",
+      ok: false,
+      errorCode: "upstream_auth",
+    });
+    expect(JSON.stringify(payload)).not.toContain("subscription-access-bulk");
+  });
+
+  test("POST subscription refresh-all reuses future expiries and skips rows without credentials", async () => {
+    const config = makeConfig({
+      codexAccounts: [{ id: "pool-subscription-no-credential", email: "missing@example.test", isMain: false }],
+    });
+    seedPoolAccount(config, {
+      id: "pool-subscription-cached",
+      email: "cached@example.test",
+      accessToken: "subscription-access-cached",
+      refreshToken: "subscription-refresh-cached",
+      chatgptAccountId: "acct-subscription-cached",
+    });
+    let requests = 0;
+    globalThis.fetch = (async () => {
+      requests += 1;
+      return Response.json({
+        accounts: [{
+          account: { id: "acct-subscription-cached", plan_type: "plus", is_default: true },
+          entitlement: { subscription_plan: "plus", expires_at: 1_798_761_600 },
+        }],
+      });
+    }) as typeof fetch;
+
+    const refreshAll = async () => {
+      const req = new Request("http://localhost/api/codex-auth/accounts/subscription/refresh-all", { method: "POST" });
+      const resp = await handleCodexAuthAPI(req, new URL(req.url), config);
+      return await resp!.json() as {
+        total: number;
+        succeeded: number;
+        failed: number;
+        results: Array<{ id: string; attempted: boolean }>;
+      };
+    };
+
+    expect(await refreshAll()).toMatchObject({
+      total: 1,
+      succeeded: 1,
+      failed: 0,
+      results: [{ id: "pool-subscription-cached", attempted: true }],
+    });
+    expect(await refreshAll()).toMatchObject({
+      total: 1,
+      succeeded: 1,
+      failed: 0,
+      results: [{ id: "pool-subscription-cached", attempted: false }],
+    });
+    expect(requests).toBe(1);
+  });
+
   test("GET /api/codex-auth/accounts exposes only 30d quota for go and free plans", async () => {
     const config = makeConfig({
       codexAccounts: [

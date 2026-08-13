@@ -31,6 +31,7 @@ export function CodexAccountPoolMainCard({
   onCopyDoctor,
   doctorCopyOutcomeFor,
   subscriptionRefreshingId,
+  subscriptionRefreshBusy,
   onRefreshSubscription,
 }: {
   t: TFn;
@@ -47,6 +48,7 @@ export function CodexAccountPoolMainCard({
   onCopyDoctor?: (accountId: string) => void;
   doctorCopyOutcomeFor?: (accountId: string) => "copied" | "unavailable" | null;
   subscriptionRefreshingId: string | null;
+  subscriptionRefreshBusy: boolean;
   onRefreshSubscription: (account: CodexAccountEntry) => void;
 }) {
   const mainFallbackLabel = t("codexAuth.codexApp");
@@ -126,7 +128,7 @@ export function CodexAccountPoolMainCard({
         <CodexSubscriptionStatus
           account={mainSwitchEntry}
           refreshing={subscriptionRefreshingId === "__main__"}
-          refreshBusy={subscriptionRefreshingId !== null}
+          refreshBusy={subscriptionRefreshBusy}
           onRefresh={() => onRefreshSubscription(mainSwitchEntry)}
         />
       )}
@@ -156,20 +158,26 @@ export function CodexAccountPoolPageHead({
   embedded,
   refreshingQuota,
   pausingExhausted,
+  refreshingSubscriptions,
+  subscriptionRefreshBusy,
   pauseBusy,
   actionFeedback,
   actionFeedbackTone,
   onRefresh,
+  onRefreshSubscriptions,
   onPauseExhausted,
 }: {
   t: TFn;
   embedded: boolean;
   refreshingQuota: boolean;
   pausingExhausted: boolean;
+  refreshingSubscriptions: boolean;
+  subscriptionRefreshBusy: boolean;
   pauseBusy?: boolean;
   actionFeedback?: string | null;
   actionFeedbackTone?: "ok" | "err" | null;
   onRefresh: () => void;
+  onRefreshSubscriptions: () => void;
   onPauseExhausted: () => void;
 }) {
   return (
@@ -189,8 +197,18 @@ export function CodexAccountPoolPageHead({
         <button
           type="button"
           className="btn btn-sm btn-ghost codex-auth-action-btn"
+          onClick={onRefreshSubscriptions}
+          disabled={refreshingQuota || subscriptionRefreshBusy || pausingExhausted || !!pauseBusy}
+        >
+          <IconRefresh width={14} /> {refreshingSubscriptions
+            ? t("codexAuth.refreshingAllSubscriptions")
+            : t("codexAuth.refreshAllSubscriptions")}
+        </button>
+        <button
+          type="button"
+          className="btn btn-sm btn-ghost codex-auth-action-btn"
           onClick={onPauseExhausted}
-          disabled={refreshingQuota || pausingExhausted || !!pauseBusy}
+          disabled={refreshingQuota || refreshingSubscriptions || pausingExhausted || !!pauseBusy}
         >
           <IconPause width={14} /> {pausingExhausted ? t("codexAuth.pausingExhausted") : t("codexAuth.pauseExhausted")}
         </button>
@@ -198,7 +216,7 @@ export function CodexAccountPoolPageHead({
           type="button"
           className="btn btn-sm btn-ghost codex-auth-action-btn"
           onClick={onRefresh}
-          disabled={refreshingQuota || pausingExhausted || !!pauseBusy}
+          disabled={refreshingQuota || refreshingSubscriptions || pausingExhausted || !!pauseBusy}
         >
           <IconRefresh width={14} /> {refreshingQuota ? t("codexAuth.refreshingQuota") : t("codexAuth.refreshQuota")}
         </button>

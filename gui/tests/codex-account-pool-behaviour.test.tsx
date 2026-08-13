@@ -77,6 +77,37 @@ beforeEach(() => {
           }),
         } as unknown as Response;
       }
+      if (path === "codex-auth/accounts/subscription/refresh-all") {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: false,
+            total: 2,
+            succeeded: 1,
+            failed: 1,
+            results: [
+              {
+                id: "__main__",
+                ok: true,
+                attempted: true,
+                subscription: {
+                  plan: "plus",
+                  activeUntil: "2027-01-01T00:00:00.000Z",
+                  source: "accounts_check",
+                  observedAt: 1,
+                },
+              },
+              {
+                id: "a2",
+                ok: false,
+                attempted: true,
+                subscription: null,
+                errorCode: "upstream_auth",
+              },
+            ],
+          }),
+        } as unknown as Response;
+      }
       if (path.startsWith("codex-auth/accounts")) {
         const gate = nextAccountsResponseGate;
         nextAccountsResponseGate = null;
@@ -244,6 +275,34 @@ test("bulk pausing translates the main sentinel to its distinct account row", as
 
   expect(seen.current!.accounts.find(account => account.isMain)?.paused).toBe(true);
   expect(seen.current!.activeId).toBe("a2");
+});
+
+test("bulk subscription refresh writes one endpoint and merges results by stable account identity", async () => {
+  accounts = [
+    { id: "main-row", email: "main", isMain: true, paused: false, hasCredential: true, quota: null, subscription: null },
+    { id: "a2", email: "pool", isMain: false, paused: false, hasCredential: true, quota: null, subscription: null },
+  ];
+  const seen = await mountController();
+  let releaseReload!: () => void;
+  nextAccountsResponseGate = new Promise<void>(resolve => { releaseReload = resolve; });
+
+  let result: Awaited<ReturnType<CodexAccountPoolController["refreshAllSubscriptions"]>>;
+  await act(async () => {
+    result = await seen.current!.refreshAllSubscriptions();
+  });
+
+  expect(calls).toContain("POST codex-auth/accounts/subscription/refresh-all");
+  expect(result!).toEqual({ ok: true, total: 2, succeeded: 1, failed: 1 });
+  expect(seen.current!.accounts.find(account => account.isMain)?.subscription).toMatchObject({
+    activeUntil: "2027-01-01T00:00:00.000Z",
+  });
+  expect(seen.current!.accounts.find(account => account.id === "a2")?.subscription).toBeNull();
+  expect(seen.current!.subscriptionsRefreshingAll).toBe(false);
+
+  await act(async () => {
+    releaseReload();
+    await new Promise((resolve) => setTimeout(resolve, 30));
+  });
 });
 
 test("two pause holders both have to release before polling resumes", async () => {

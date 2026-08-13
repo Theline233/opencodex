@@ -15,7 +15,8 @@ test("the controller is the single data owner and exposes the agreed contract", 
   // Data layer (Q6): list / active / loading / switching plus the mutating actions.
   for (const member of [
     "accounts", "activeId", "loadState", "switchingId", "pauseUpdatingId", "pausingExhausted", "activeNeedsReauth",
-    "subscriptionRefreshingId", "load", "switchAccount", "setAccountPaused", "pauseExhaustedAccounts", "refreshSubscription",
+    "subscriptionRefreshingId", "subscriptionsRefreshingAll", "load", "switchAccount", "setAccountPaused", "pauseExhaustedAccounts",
+    "refreshSubscription", "refreshAllSubscriptions",
     "saveAlias", "removeAccount", "syncAfterAccountAdded",
     // WP2 (260730_gui_hydration_loading_unify/010): progress is part of the contract, because a
     // forced quota refresh keeps `loadState` at "ready" and would otherwise be invisible.
@@ -57,6 +58,16 @@ test("the pool header exposes one bulk action backed by the atomic endpoint", as
   expect(pool).toContain("controller.pauseExhaustedAccounts()");
   expect(mainCard).toContain('t("codexAuth.pauseExhausted")');
   expect(hook).toContain("/api/codex-auth/accounts/pause-exhausted");
+});
+
+test("the pool header exposes one server-orchestrated bulk subscription refresh", async () => {
+  const pool = await read("../src/components/CodexAccountPool.tsx");
+  const mainCard = await read("../src/components/codex-account-pool-main-card.tsx");
+  const hook = await read("../src/hooks/useCodexAccountPool.ts");
+
+  expect(pool).toContain("controller.refreshAllSubscriptions()");
+  expect(mainCard).toContain('t("codexAuth.refreshAllSubscriptions")');
+  expect(hook).toContain("/api/codex-auth/accounts/subscription/refresh-all");
 });
 
 test("pause is a token lease, so two holders cannot cancel each other", async () => {
