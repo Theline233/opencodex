@@ -6,8 +6,8 @@ import { enforceAppOwnedMemoryBudget } from "../lib/app-owned-memory";
 import { recordOwnedConfigPath } from "../lib/config-ownership";
 import { usageDisplayTotalTokens } from "./totals";
 import type { OcxUsage } from "../types";
-import { normalizeRouteDecisionTrace, type RouteDecisionTraceV1 } from "../routing/trace";
 import { CODEX_ACCOUNT_LOG_LABEL_RE } from "../codex/account-label";
+import { normalizeRouteDecisionTrace, type RouteDecisionTraceV1 } from "../routing/trace";
 
 export type UsageStatus = "reported" | "unreported" | "unsupported" | "estimated";
 export type CodexUsageAccountLogLabel = "main" | `p${string}`;

@@ -16,6 +16,7 @@ import {
   oauthHealthShowsReauth,
 } from "../oauth-health-display";
 import { CodexSubscriptionStatus } from "./codex-subscription-status";
+import { CodexAccountUsage7d } from "./codex-account-usage";
 
 export function CodexAccountPoolCards({
   pool,
@@ -170,6 +171,7 @@ export function CodexAccountPoolCards({
             refreshBusy={subscriptionRefreshBusy}
             onRefresh={() => onRefreshSubscription(a)}
           />
+          <CodexAccountUsage7d account={a} />
           {healthSummary && (
             <div className="card-sub faint">{healthSummary}</div>
           )}

@@ -15,6 +15,7 @@ import {
   markAccountNeedsReauth, isAccountNeedsReauth, clearAccountNeedsReauth, clearAccountQuota,
   clearMainAccountInfoCache, maskEmail,
   clearCodexQuotaPrimeState, primeCodexPoolQuotas, seedCodexAuthAdmissionForTests,
+  clearCodexUsageCardCacheForTests,
   type CodexAuthAccountDto,
   listCodexAuthAccounts,
 } from "../src/codex/auth-api";
@@ -274,6 +275,7 @@ beforeEach(() => {
   clearThreadAccountMap();
   clearPoolRotationState();
   clearCodexWebSocketRegistry();
+  clearCodexUsageCardCacheForTests();
   resetMainCodexAccountIdentityTrackingForTests();
 });
 
@@ -290,6 +292,7 @@ afterEach(() => {
   clearThreadAccountMap();
   clearPoolRotationState();
   clearCodexWebSocketRegistry();
+  clearCodexUsageCardCacheForTests();
   globalThis.fetch = previousFetch;
   if (previousOpencodexHome === undefined) delete process.env.OPENCODEX_HOME;
   else process.env.OPENCODEX_HOME = previousOpencodexHome;

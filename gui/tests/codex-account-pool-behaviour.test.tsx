@@ -165,6 +165,12 @@ beforeEach(() => {
           }),
         } as unknown as Response;
       }
+      if (path === "codex-auth/accounts/usage") {
+        return {
+          ok: true,
+          json: async () => ({ windowDays: 7, generatedAt: Date.now(), since: Date.now(), accounts: {} }),
+        } as unknown as Response;
+      }
       if (path.startsWith("codex-auth/accounts")) {
         const gate = nextAccountsResponseGate;
         nextAccountsResponseGate = null;
@@ -244,7 +250,8 @@ async function mountController(enabled = true) {
 test("the controller loads once on mount", async () => {
   const seen = await mountController();
   expect(seen.current).not.toBeNull();
-  expect(calls.filter(c => c.includes("codex-auth/accounts")).length).toBe(1);
+  expect(calls.filter(c => c === "GET codex-auth/accounts").length).toBe(1);
+  expect(calls.filter(c => c === "GET codex-auth/accounts/usage").length).toBe(1);
   expect(seen.current!.accounts.length).toBe(1);
   expect(seen.current!.loadState).toBe("ready");
 });

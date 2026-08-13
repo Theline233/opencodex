@@ -37,6 +37,7 @@ import {
   CodexPoolAuthenticationError,
   CodexThreadAffinityExpiredError,
 } from "../codex/auth-context";
+import { codexAuthContextLogLabel } from "../codex/account-label";
 import { formatCodexProviderForLog } from "../codex/routing";
 import { cancelBodyOnAbort, signalWithTimeout } from "../lib/abort";
 import { sidecarEnter } from "../lib/sidecar-tracker";
@@ -529,11 +530,13 @@ export async function resolveLiveRelay(
         beginCodexAccountSelection: codexAccountSelectionForTurn(turnAdmissionLease),
       });
       if (forward) {
+        const accountId = codexLogAccountId(forward.authContext);
         logCtx.provider = formatCodexProviderForLog(
           forward.providerName,
-          codexLogAccountId(forward.authContext),
+          accountId,
           config,
         );
+        logCtx.accountLogLabel = codexAuthContextLogLabel(forward.authContext, config);
       }
     } catch (err) {
       if (err instanceof CodexAccountCooldownError) {

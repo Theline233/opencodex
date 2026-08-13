@@ -129,6 +129,12 @@ test("the pool header exposes one server-orchestrated bulk subscription refresh"
   expect(hook).toContain("/api/codex-auth/accounts/subscription/refresh-all");
 });
 
+test("account usage is loaded from a separate optional endpoint", async () => {
+  const hook = await read("../src/hooks/useCodexAccountPool.ts");
+  expect(hook).toContain("/api/codex-auth/accounts/usage");
+  expect(hook).toContain("optional usage must not fail account loading");
+});
+
 test("pause is a token lease, so two holders cannot cancel each other", async () => {
   const hook = await read("../src/hooks/useCodexAccountPool.ts");
 

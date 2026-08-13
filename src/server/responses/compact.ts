@@ -61,7 +61,6 @@ import {
   type CodexAuthContext,
 } from "../../codex/auth-context";
 import {
-  formatCodexProviderForLog,
   recordCodexUpstreamOutcome,
   type CodexUpstreamOutcome,
 } from "../../codex/routing";

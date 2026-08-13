@@ -19,6 +19,7 @@ import {
   CodexThreadAffinityExpiredError,
 } from "../codex/auth-context";
 import { codexAccountNamespaceForModel } from "../codex/account-namespace-match";
+import { codexAuthContextLogLabel } from "../codex/account-label";
 import { formatCodexProviderForLog } from "../codex/routing";
 import { signalWithTimeout } from "../lib/abort";
 import { readBoundedResponseBytes } from "../lib/bounded-body";
@@ -119,6 +120,7 @@ export async function handleSearch(
     logCtx.provider = accountNamespace
       ? `${upstream.providerName}-${accountNamespace}`
       : formatCodexProviderForLog(upstream.providerName, codexLogAccountId(upstream.authContext), config);
+    logCtx.accountLogLabel = codexAuthContextLogLabel(upstream.authContext, config);
   } catch (err) {
     if (err instanceof CodexAccountCooldownError) {
       return cooldownErrorResponse(err, Date.now(), accountNamespace);
