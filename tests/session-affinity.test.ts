@@ -1,7 +1,7 @@
 import { describe, expect, test, beforeEach, afterEach } from "bun:test";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { resolveCodexAccountForThread, clearThreadAccountMap, formatCodexProviderForLog } from "../src/codex/routing";
+import { codexAccountRefForLog, resolveCodexAccountForThread, clearThreadAccountMap, formatCodexProviderForLog } from "../src/codex/routing";
 import { CODEX_ACCOUNT_LOG_LABEL_RE, fallbackCodexAccountLogLabel } from "../src/codex/account-label";
 import { updateAccountQuota, clearAccountQuota } from "../src/codex/auth-api";
 import { saveCodexAccountCredential } from "../src/codex/account-store";
@@ -210,5 +210,19 @@ describe("formatCodexProviderForLog", () => {
       ],
     });
     expect(formatCodexProviderForLog("chatgpt", "missing", config)).toBe("chatgpt");
+  });
+});
+
+describe("codexAccountRefForLog", () => {
+  test("returns only main or a stable pseudonymous pool ref", () => {
+    const config = makeConfig({
+      codexAccounts: [
+        { id: "pool-a", email: "pool-a@example.test", isMain: false, logLabel: "pabc123" },
+      ],
+    });
+    expect(codexAccountRefForLog(null, config)).toBe("main");
+    expect(codexAccountRefForLog("__main__", config)).toBe("main");
+    expect(codexAccountRefForLog("pool-a", config)).toBe("pabc123");
+    expect(codexAccountRefForLog("missing", config)).toBeUndefined();
   });
 });

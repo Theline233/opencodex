@@ -19,7 +19,7 @@ import {
   CodexThreadAffinityExpiredError,
 } from "../codex/auth-context";
 import { codexAccountNamespaceForModel } from "../codex/account-namespace-match";
-import { formatCodexProviderForLog } from "../codex/routing";
+import { codexAccountRefForLog, formatCodexProviderForLog } from "../codex/routing";
 import { signalWithTimeout } from "../lib/abort";
 import { sidecarEnter } from "../lib/sidecar-tracker";
 import type { OcxConfig } from "../types";
@@ -79,6 +79,7 @@ export async function handleSearch(
       }
       exactAccount = { accountId: route.codexAccountId, modelId: route.modelId };
       logCtx.provider = `${route.providerName}-${accountNamespace}`;
+      logCtx.codexAccountRef = codexAccountRefForLog(route.codexAccountId, config);
       logCtx.routeDecision = route.routeDecision;
       // The ChatGPT search endpoint only understands the native model slug. The
       // account namespace is proxy routing syntax and must not cross the wire.
@@ -118,6 +119,9 @@ export async function handleSearch(
     logCtx.provider = accountNamespace
       ? `${upstream.providerName}-${accountNamespace}`
       : formatCodexProviderForLog(upstream.providerName, codexLogAccountId(upstream.authContext), config);
+    logCtx.codexAccountRef = upstream.authContext.kind === "pool" || upstream.authContext.kind === "main-pool"
+      ? codexAccountRefForLog(upstream.authContext.accountId, config)
+      : "caller";
   } catch (err) {
     if (err instanceof CodexAccountCooldownError) {
       return cooldownErrorResponse(err, Date.now(), accountNamespace);

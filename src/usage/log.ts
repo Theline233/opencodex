@@ -4,9 +4,19 @@ import { getConfigDir } from "../config";
 import { recordOwnedConfigPath } from "../lib/config-ownership";
 import { usageDisplayTotalTokens } from "./totals";
 import type { OcxUsage } from "../types";
+import { CODEX_ACCOUNT_LOG_LABEL_RE } from "../codex/account-label";
 import { normalizeRouteDecisionTrace, type RouteDecisionTraceV1 } from "../routing/trace";
 
 export type UsageStatus = "reported" | "unreported" | "unsupported" | "estimated";
+
+/**
+ * Privacy-safe Codex account attribution carried by durable usage rows.
+ *
+ * `main` names the local Codex App login. Added accounts use the same random
+ * `p******` labels already present in provider log labels. Raw account ids,
+ * emails, aliases, and public model namespaces must never be stored here.
+ */
+export type CodexAccountUsageRef = "main" | "caller" | `p${string}`;
 
 /**
  * Recovery kinds recorded per attempt in the usage log; the GUI renders localized labels
@@ -25,6 +35,8 @@ export interface PersistedUsageAttempt {
   ordinal: number;
   provider: string;
   model: string;
+  /** Account that served this attempt when a combo routed through Codex. */
+  codexAccountRef?: CodexAccountUsageRef;
   adapter: string;
   status: number;
   durationMs: number;
@@ -49,6 +61,8 @@ export interface PersistedUsageEntry {
   timestamp: number;
   provider: string;
   model: string;
+  /** Account that actually served this Codex/ChatGPT request, when known. */
+  codexAccountRef?: CodexAccountUsageRef;
   surface?: "claude" | "claude-desktop" | "grok";
   /** Matched configured key id; absent for environment/loopback admissions and
    *  for every row written before attribution existed. */
@@ -255,6 +269,10 @@ function normalizeUsageAttempt(raw: unknown): PersistedUsageAttempt | null {
     ordinal: attempt.ordinal as number,
     provider: attempt.provider,
     model: attempt.model,
+    ...(attempt.codexAccountRef === "main" || attempt.codexAccountRef === "caller"
+      || CODEX_ACCOUNT_LOG_LABEL_RE.test(String(attempt.codexAccountRef ?? ""))
+      ? { codexAccountRef: attempt.codexAccountRef as CodexAccountUsageRef }
+      : {}),
     adapter: attempt.adapter,
     status: attempt.status,
     durationMs: attempt.durationMs,
@@ -330,6 +348,10 @@ function normalizeUsageEntry(entry: PersistedUsageEntry): PersistedUsageEntry {
     timestamp: entry.timestamp,
     provider: entry.provider,
     model: entry.model,
+    ...(entry.codexAccountRef === "main" || entry.codexAccountRef === "caller"
+      || CODEX_ACCOUNT_LOG_LABEL_RE.test(entry.codexAccountRef ?? "")
+      ? { codexAccountRef: entry.codexAccountRef }
+      : {}),
     ...(isKnownUsageSurface(entry.surface) ? { surface: entry.surface } : {}),
     ...(typeof entry.apiKeyId === "string" && entry.apiKeyId.trim()
       // Deliberately NOT capped. `capMetadataString` protects free-form metadata

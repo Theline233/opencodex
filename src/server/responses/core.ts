@@ -82,6 +82,7 @@ import {
   type CodexAuthContext,
 } from "../../codex/auth-context";
 import {
+  codexAccountRefForLog,
   computeQuotaCooldown,
   formatCodexProviderForLog,
   previewCodexAccountForRequest,
@@ -437,6 +438,7 @@ async function retryCodexPoolOnAlternateAccount(
     retryAuthCtx.accountId,
     config,
   );
+  logCtx.codexAccountRef = codexAccountRefForLog(retryAuthCtx.accountId, config);
 
   noteAttemptSend(logCtx.activeAttempt, passthroughEstimate);
   try {
@@ -1068,6 +1070,7 @@ export async function handleComboResponses(
         attempt,
         childLog.provider,
         childLog.providerAdapter ?? attempt.adapter,
+        childLog.codexAccountRef,
       );
       finishRequestAttempt(attempt, 499, Date.now() - started, childLog.usage);
       (logCtx.attempts ??= []).push(attempt);
@@ -1122,6 +1125,7 @@ export async function handleComboResponses(
         attempt,
         childLog.provider,
         childLog.providerAdapter ?? attempt.adapter,
+        childLog.codexAccountRef,
       );
       (logCtx.attempts ??= []).push(attempt);
       attemptRetained = true;
@@ -1167,6 +1171,7 @@ export async function handleComboResponses(
       attempt,
       childLog.provider,
       childLog.providerAdapter ?? attempt.adapter,
+      childLog.codexAccountRef,
     );
     finishRequestAttempt(
       attempt,
@@ -1547,6 +1552,11 @@ async function handleResponsesInner(
   logCtx.provider = route.codexAccountNamespace
     ? `${route.providerName}-${route.codexAccountNamespace}`
     : formatCodexProviderForLog(route.providerName, codexLogAccountId(authCtx), config);
+  if (route.codexAccountMode) {
+    logCtx.codexAccountRef = authCtx.kind === "pool" || authCtx.kind === "main-pool"
+      ? codexAccountRefForLog(authCtx.accountId, config)
+      : "caller";
+  } else delete logCtx.codexAccountRef;
   // Prefer Codex pool account as the Cursor thread namespace when present. Cursor routes without
   // codexAccountMode still get a credential-derived scope inside the Cursor adapter.
   const identityScope = codexLogAccountId(authCtx);
@@ -1629,7 +1639,7 @@ async function handleResponsesInner(
   const adapterProvider = resolveWireProtocolOverride(route.providerName, route.modelId, route.provider, inboundWire);
   const adapter = resolveAdapter(adapterProvider, config.cacheRetention);
   logCtx.providerAdapter = adapter.name;
-  sealRequestAttemptIdentity(logCtx.activeAttempt, logCtx.provider, adapter.name);
+  sealRequestAttemptIdentity(logCtx.activeAttempt, logCtx.provider, adapter.name, logCtx.codexAccountRef);
   const isPassthrough = "passthrough" in adapter && !!adapter.passthrough;
 
   if (adapter.name === "kiro" && parsed.previousResponseId && !parsed._previousResponseInputExpanded) {
@@ -2774,7 +2784,7 @@ async function handleResponsesInner(
         : undefined;
       if (retryEstimate !== undefined) logCtx.usageLogInputTokens = retryEstimate;
       logCtx.providerAdapter = activeAdapter.name;
-      sealRequestAttemptIdentity(logCtx.activeAttempt, logCtx.provider, activeAdapter.name);
+      sealRequestAttemptIdentity(logCtx.activeAttempt, logCtx.provider, activeAdapter.name, logCtx.codexAccountRef);
       noteAttemptSend(logCtx.activeAttempt, retryEstimate, recovery);
       try {
         try {
@@ -2926,7 +2936,7 @@ async function handleResponsesInner(
             resolveWireProtocolOverride(route.providerName, route.modelId, route.provider, inboundWire),
             config.cacheRetention,
           );
-          sealRequestAttemptIdentity(logCtx.activeAttempt, logCtx.provider, activeAdapter.name);
+          sealRequestAttemptIdentity(logCtx.activeAttempt, logCtx.provider, activeAdapter.name, logCtx.codexAccountRef);
           const result = await rebuildAndRefetch("anthropic-oauth-429");
           if ("failed" in result) return result.failed;
           upstreamResponse = result;
@@ -3179,7 +3189,7 @@ async function handleResponsesInner(
               resolveWireProtocolOverride(route.providerName, route.modelId, route.provider, inboundWire),
               config.cacheRetention,
             );
-            sealRequestAttemptIdentity(logCtx.activeAttempt, logCtx.provider, activeAdapter.name);
+            sealRequestAttemptIdentity(logCtx.activeAttempt, logCtx.provider, activeAdapter.name, logCtx.codexAccountRef);
             nextContinuationRecoveryKind = "anthropic-oauth-429";
             continue;
           } catch {

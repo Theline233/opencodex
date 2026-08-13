@@ -36,6 +36,16 @@ export interface CodexAccountEntry {
     nextRetryAt?: number;
     lastErrorCode?: string;
   } | null;
+  /** Rolling seven-day API list-price equivalent, not an actual Plus charge. */
+  usage7d?: {
+    requests: number;
+    pricedRequests: number;
+    unpricedRequests: number;
+    unmeteredRequests: number;
+    totalTokens: number;
+    estimatedCostUsd: number;
+  };
+  usageHistoryTruncated?: true;
   needsReauth?: boolean;
   health?: { status: "healthy" | "cooldown" | "reauth_required" | "warning"; reason?: string; until?: string };
   healthLabel?: string;
@@ -54,6 +64,11 @@ export interface CodexSubscriptionBulkRefreshSummary {
   succeeded: number;
   failed: number;
 }
+
+type CodexAccountUsageResponse = {
+  historyTruncated?: boolean;
+  accounts?: Array<{ id?: string; usage7d?: CodexAccountEntry["usage7d"] }>;
+};
 
 /**
  * The auto-switch threshold arrives on the same /active response as the account list.
@@ -154,6 +169,21 @@ export function useCodexAccountPool(apiBase: string, enabled = true): CodexAccou
   // polls do not flip the UI back to the cold skeleton.
   const hasLoadedRef = useRef(seed != null);
   const pauseMutationRef = useRef<"bulk" | { accountId: string } | null>(null);
+  const usageByIdRef = useRef<Map<string, Pick<CodexAccountEntry, "usage7d" | "usageHistoryTruncated">> | null>(null);
+  if (usageByIdRef.current === null) {
+    usageByIdRef.current = new Map((seed?.accounts ?? []).flatMap(account => (
+      account.usage7d
+        ? [[account.id, {
+          usage7d: account.usage7d,
+          ...(account.usageHistoryTruncated ? { usageHistoryTruncated: true as const } : {}),
+        }] as const]
+        : []
+    )));
+  }
+
+  const attachHeldUsage = useCallback((rows: CodexAccountEntry[]): CodexAccountEntry[] => (
+    rows.map(account => ({ ...account, ...(usageByIdRef.current!.get(account.id) ?? {}) }))
+  ), []);
 
   const subscribeLoadObserver = useCallback((observer: CodexAccountLoadObserver) => {
     observersRef.current!.add(observer);
@@ -196,13 +226,31 @@ export function useCodexAccountPool(apiBase: string, enabled = true): CodexAccou
           if (!response.ok) throw new Error("account load failed");
           const payload = await response.json();
           if (loadGenerationRef.current === generation) {
-            nextAccounts = (payload.accounts ?? []) as CodexAccountEntry[];
+            nextAccounts = attachHeldUsage((payload.accounts ?? []) as CodexAccountEntry[]);
             setAccounts(nextAccounts);
             hasAccountsRef.current = nextAccounts.length > 0;
             hasLoadedRef.current = true;
             // Progressive: paint account/quota boxes as soon as /accounts returns.
             setLoadState("ready");
           }
+          try {
+            const usageResponse = await fetch(`${apiBase}/api/codex-auth/accounts/usage`);
+            if (usageResponse.ok) {
+              const usage = await usageResponse.json() as CodexAccountUsageResponse;
+              if (loadGenerationRef.current !== generation || !nextAccounts) return true;
+              const nextUsage = new Map<string, Pick<CodexAccountEntry, "usage7d" | "usageHistoryTruncated">>();
+              for (const row of usage.accounts ?? []) {
+                if (typeof row.id !== "string" || !row.usage7d) continue;
+                nextUsage.set(row.id, {
+                  usage7d: row.usage7d,
+                  ...(usage.historyTruncated ? { usageHistoryTruncated: true as const } : {}),
+                });
+              }
+              usageByIdRef.current = nextUsage;
+              nextAccounts = attachHeldUsage(nextAccounts);
+              setAccounts(nextAccounts);
+            }
+          } catch { /* optional usage must not fail account loading */ }
           return true;
         } catch {
           return false;
@@ -259,7 +307,7 @@ export function useCodexAccountPool(apiBase: string, enabled = true): CodexAccou
       setInflightCount(count => Math.max(0, count - 1));
       setFirstAttemptSettled(true);
     }
-  }, [apiBase]);
+  }, [apiBase, attachHeldUsage]);
 
   // Initial load plus background refresh. Owned here so mounting or unmounting a surface
   // never changes the request count.

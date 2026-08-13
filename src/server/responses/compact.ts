@@ -59,6 +59,7 @@ import {
   type CodexAuthContext,
 } from "../../codex/auth-context";
 import {
+  codexAccountRefForLog,
   formatCodexProviderForLog,
   recordCodexUpstreamOutcome,
   type CodexUpstreamOutcome,
@@ -328,6 +329,9 @@ export async function handleResponsesCompact(
         });
         const selected = headersForCodexAuthContext(req.headers, authCtx);
         compactProvider = applyCodexAuthContextToProvider(route.provider, authCtx, route.codexAccountMode);
+        logCtx.codexAccountRef = authCtx.kind === "pool" || authCtx.kind === "main-pool"
+          ? codexAccountRefForLog(authCtx.accountId, config)
+          : "caller";
         for (const name of FORWARD_HEADERS) {
           const value = selected.get(name);
           if (value) headers.set(name, value);
@@ -507,6 +511,8 @@ export async function handleResponsesCompact(
         });
         await upstream.body?.cancel().catch(() => undefined);
         outcomeCtx = alternate.authCtx;
+        logCtx.provider = formatCodexProviderForLog(route.providerName, alternate.authCtx.accountId, config);
+        logCtx.codexAccountRef = codexAccountRefForLog(alternate.authCtx.accountId, config);
         try {
           upstream = await sendCompactAttempt(alternate.provider, alternate.headers, "single");
         } catch (err) {

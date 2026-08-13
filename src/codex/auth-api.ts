@@ -1,5 +1,6 @@
 import { ConfigMutationLockError, loadConfig, mutatePersistedConfig, saveConfigPreservingClaudeCode } from "../config";
 import { withCodexAccountLogLabel } from "./account-label";
+import { rollupCodexAccountUsage7d, type CodexAccountUsage7d } from "./account-usage";
 import {
   getCodexAccountCredential,
   getValidCodexToken,
@@ -81,6 +82,12 @@ import { maskEmail } from "../lib/privacy";
 import { CodexWarmupError, codexWarmupFailureReason, warmCodexAccount } from "./warmup";
 export { maskEmail } from "../lib/privacy";
 import type { CodexAccount, OcxConfig } from "../types";
+import {
+  currentUsageLogRevision,
+  readUsageSnapshotForManagement,
+  usageLogRevisionKey,
+  type UsageLogRevision,
+} from "../usage/log";
 import { isCanonicalOpenAiForwardProvider, OPENAI_CODEX_PROVIDER_ID } from "../providers/openai-tiers";
 import { providerCodexAccountMode } from "../providers/registry";
 import { readBoundedResponseBody } from "../lib/bounded-body";
@@ -1115,6 +1122,108 @@ export interface CodexAuthAccountsSnapshot {
   mainIdentityGeneration: number;
 }
 
+type CodexUsageCardSnapshot = {
+  byAccountId: Record<string, CodexAccountUsage7d>;
+  since: number;
+  generatedAt: number;
+  historyTruncated: boolean;
+};
+
+type CodexUsageCardCache = {
+  configKey: string;
+  sourceRevision: UsageLogRevision | null;
+  expiresAt: number;
+  snapshot: CodexUsageCardSnapshot;
+};
+
+const CODEX_USAGE_CARD_CACHE_TTL_MS = 60_000;
+let codexUsageCardCache: CodexUsageCardCache | null = null;
+
+function usageLogWasOnlyAppended(
+  previous: UsageLogRevision | null,
+  observed: UsageLogRevision | null,
+): boolean {
+  return previous !== null
+    && observed !== null
+    && previous.path === observed.path
+    && previous.dev === observed.dev
+    && previous.ino === observed.ino
+    && previous.birthtimeMs === observed.birthtimeMs
+    && observed.size >= previous.size;
+}
+
+async function readCodexUsageCardSnapshot(config: OcxConfig): Promise<CodexUsageCardSnapshot> {
+  const maxReadBytes = config.managementUsageMaxReadBytes ?? 64 * 1024 * 1024;
+  const now = Date.now();
+  const configKey = JSON.stringify([
+    providerCodexAccountMode(OPENAI_CODEX_PROVIDER_ID, config.providers[OPENAI_CODEX_PROVIDER_ID]),
+    (config.codexAccounts ?? []).map(account => [account.id, account.isMain, account.logLabel]),
+    Object.entries(config.codexAccountNamespaces ?? {}),
+  ]);
+  const observed = currentUsageLogRevision();
+  const cached = codexUsageCardCache;
+  if (cached?.configKey === configKey && now < cached.expiresAt) {
+    const unchanged = usageLogRevisionKey(cached.sourceRevision) === usageLogRevisionKey(observed);
+    // The account list polls every 30s. Appending a new request must not make that
+    // poll reparse a potentially 64 MiB ledger; refresh the compact card rollup at
+    // most once per minute. Replacements/truncation still invalidate immediately.
+    if (unchanged || usageLogWasOnlyAppended(cached.sourceRevision, observed)) return cached.snapshot;
+  }
+
+  const source = await readUsageSnapshotForManagement(maxReadBytes);
+  const rolled = rollupCodexAccountUsage7d(source.entries, {
+    ...config,
+    codexAccountMode: providerCodexAccountMode(
+      OPENAI_CODEX_PROVIDER_ID,
+      config.providers[OPENAI_CODEX_PROVIDER_ID],
+    ),
+  }, now);
+  const historyTruncated = source.truncatedPrefixBytes > 0 || source.entriesTruncated;
+  const snapshot: CodexUsageCardSnapshot = {
+    byAccountId: Object.fromEntries(rolled.byAccountId),
+    since: rolled.since,
+    generatedAt: rolled.generatedAt,
+    historyTruncated,
+  };
+  codexUsageCardCache = {
+    configKey,
+    sourceRevision: source.revision,
+    expiresAt: now + CODEX_USAGE_CARD_CACHE_TTL_MS,
+    snapshot,
+  };
+  return snapshot;
+}
+
+/** Test seam for isolated OPENCODEX_HOME fixtures. */
+export function clearCodexUsageCardCacheForTests(): void {
+  codexUsageCardCache = null;
+}
+
+export async function listCodexAccountUsage7d(config: OcxConfig): Promise<{
+  range: "7d";
+  since: number;
+  generatedAt: number;
+  historyTruncated: boolean;
+  accounts: Array<{ id: string; usage7d: CodexAccountUsage7d }>;
+}> {
+  const runtimeConfig = getRuntimeConfig(config);
+  const snapshot = await readCodexUsageCardSnapshot(runtimeConfig);
+  const ids = [
+    MAIN_CODEX_ACCOUNT_ID,
+    ...(runtimeConfig.codexAccounts ?? []).filter(isSelectableCodexPoolAccount).map(account => account.id),
+  ];
+  return {
+    range: "7d",
+    since: snapshot.since,
+    generatedAt: snapshot.generatedAt,
+    historyTruncated: snapshot.historyTruncated,
+    accounts: ids.flatMap(id => {
+      const usage7d = snapshot.byAccountId[id];
+      return usage7d ? [{ id, usage7d }] : [];
+    }),
+  };
+}
+
 export async function listCodexAuthAccountsSnapshot(
   config: OcxConfig,
   forceRefresh = false,
@@ -1346,6 +1455,14 @@ export async function handleCodexAuthAPI(
   url: URL,
   config: OcxConfig,
 ): Promise<Response | null> {
+
+  if (url.pathname === "/api/codex-auth/accounts/usage" && req.method === "GET") {
+    try {
+      return jsonResponse(await listCodexAccountUsage7d(config));
+    } catch {
+      return jsonResponse({ error: "usage_read_failed" }, 503);
+    }
+  }
 
   if (url.pathname === "/api/codex-auth/accounts" && req.method === "GET") {
     const forceRefresh = url.searchParams.get("refresh") === "1" || url.searchParams.get("refresh") === "true";

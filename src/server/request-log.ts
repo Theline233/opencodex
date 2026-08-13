@@ -68,6 +68,8 @@ export interface RequestLogContext {
   modelSupportsServiceTier?: boolean;
   responseServiceTier?: string;
   resolvedModel?: string;
+  /** Privacy-safe Codex account ref (`main`, `caller`, or p******); raw ids never enter logs. */
+  codexAccountRef?: "main" | "caller" | `p${string}`;
   usage?: OcxUsage;
   usageLogInputTokens?: number;
   attempts?: PersistedUsageAttempt[];
@@ -133,6 +135,8 @@ export interface RequestLogEntry {
   modelSupportsServiceTier?: boolean;
   responseServiceTier?: string;
   resolvedModel?: string;
+  /** Privacy-safe Codex account ref (`main`, `caller`, or p******); raw ids never enter logs. */
+  codexAccountRef?: "main" | "caller" | `p${string}`;
   status: number;
   durationMs: number;
   errorCode?: string;
@@ -243,6 +247,7 @@ export function requestLogEntryFromPersistedUsage(entry: PersistedUsageEntry): R
       : {}),
     ...(entry.responseServiceTier ? { responseServiceTier: entry.responseServiceTier } : {}),
     ...(entry.resolvedModel ? { resolvedModel: entry.resolvedModel } : {}),
+    ...(entry.codexAccountRef ? { codexAccountRef: entry.codexAccountRef } : {}),
     status: entry.status,
     durationMs: entry.durationMs,
     ...(entry.errorCode ? { errorCode: entry.errorCode } : {}),
@@ -327,6 +332,7 @@ export function addRequestLog(entry: RequestLogEntry) {
       ...(isKnownInboundProtocol(entry.inboundProtocol) ? { inboundProtocol: entry.inboundProtocol } : {}),
       ...(entry.conversationId ? { conversationId: entry.conversationId } : {}),
       ...(entry.resolvedModel ? { resolvedModel: entry.resolvedModel } : {}),
+      ...(entry.codexAccountRef ? { codexAccountRef: entry.codexAccountRef } : {}),
       ...(entry.requestedModel ? { requestedModel: entry.requestedModel } : {}),
       ...(entry.requestedEffort ? { requestedEffort: entry.requestedEffort } : {}),
       ...(entry.effectiveEffort ? { effectiveEffort: entry.effectiveEffort } : {}),
@@ -822,6 +828,7 @@ export function addFinalRequestLog(
     ...(logCtx.modelSupportsServiceTier !== undefined ? { modelSupportsServiceTier: logCtx.modelSupportsServiceTier } : {}),
     ...(logCtx.responseServiceTier ? { responseServiceTier: logCtx.responseServiceTier } : {}),
     ...(logCtx.resolvedModel ? { resolvedModel: logCtx.resolvedModel } : {}),
+    ...(logCtx.codexAccountRef ? { codexAccountRef: logCtx.codexAccountRef } : {}),
     status: effectiveStatus,
     durationMs: Date.now() - start,
     ...(logCtx.firstOutputMs !== undefined ? { firstOutputMs: logCtx.firstOutputMs } : {}),
@@ -959,10 +966,13 @@ export function sealRequestAttemptIdentity(
   attempt: PersistedUsageAttempt | undefined,
   provider: string,
   adapter: string,
+  codexAccountRef?: "main" | "caller" | `p${string}`,
 ): void {
   if (!attempt) return;
   attempt.provider = provider;
   attempt.adapter = adapter;
+  if (codexAccountRef) attempt.codexAccountRef = codexAccountRef;
+  else delete attempt.codexAccountRef;
 }
 
 export function noteAttemptSend(

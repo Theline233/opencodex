@@ -1712,3 +1712,17 @@ export function formatCodexProviderForLog(providerName: string, accountId: strin
     .find(candidate => isSelectableCodexPoolAccount(candidate) && candidate.id === accountId);
   return account ? `${providerName}-${codexAccountLogLabel(account)}` : providerName;
 }
+
+/**
+ * Durable, privacy-safe account attribution for usage accounting.
+ *
+ * Keep this separate from {@link formatCodexProviderForLog}: provider labels are
+ * display/routing identities and legacy exact-account namespaces may change,
+ * while a usage row needs one stable ref for the physical account that served it.
+ */
+export function codexAccountRefForLog(accountId: string | null, config: OcxConfig): "main" | `p${string}` | undefined {
+  if (accountId === null || accountId === MAIN_CODEX_ACCOUNT_ID) return "main";
+  const account = (config.codexAccounts ?? [])
+    .find(candidate => isSelectableCodexPoolAccount(candidate) && candidate.id === accountId);
+  return account ? codexAccountLogLabel(account) as `p${string}` : undefined;
+}

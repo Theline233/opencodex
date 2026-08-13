@@ -15,6 +15,7 @@ import {
   oauthHealthShowsReauth,
 } from "../oauth-health-display";
 import { CodexSubscriptionStatus } from "./codex-subscription-status";
+import { CodexAccountUsage7d } from "./codex-account-usage";
 
 export function CodexAccountPoolMainCard({
   t,
@@ -62,6 +63,8 @@ export function CodexAccountPoolMainCard({
     hasCredential: true,
     quota: main?.quota ?? null,
     subscription: main?.subscription ?? null,
+    ...(main?.usage7d ? { usage7d: main.usage7d } : {}),
+    ...(main?.usageHistoryTruncated ? { usageHistoryTruncated: true as const } : {}),
   };
   const showReauth = Boolean(main?.needsReauth) || oauthHealthShowsReauth(main?.health?.status);
   const inCooldown = oauthHealthIsCooldown(main?.health?.status);
@@ -132,6 +135,7 @@ export function CodexAccountPoolMainCard({
           onRefresh={() => onRefreshSubscription(mainSwitchEntry)}
         />
       )}
+      {main && <CodexAccountUsage7d account={mainSwitchEntry} />}
       {healthSummary && (
         <div className="card-sub faint">{healthSummary}</div>
       )}

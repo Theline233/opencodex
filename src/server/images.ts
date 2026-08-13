@@ -22,7 +22,7 @@ import {
   CodexPoolAuthenticationError,
   CodexThreadAffinityExpiredError,
 } from "../codex/auth-context";
-import { formatCodexProviderForLog } from "../codex/routing";
+import { codexAccountRefForLog, formatCodexProviderForLog } from "../codex/routing";
 import { signalWithTimeout } from "../lib/abort";
 import { sidecarEnter } from "../lib/sidecar-tracker";
 import type { OcxConfig } from "../types";
@@ -383,7 +383,13 @@ export async function handleImages(
       forward = await resolveFirstUsableOpenAiSidecar(candidates.forwardCandidates, req.headers, config, {
         beginCodexAccountSelection: codexAccountSelectionForTurn(turnAdmissionLease),
       });
-      if (forward) logCtx.provider = formatCodexProviderForLog(forward.providerName, codexLogAccountId(forward.authContext), config);
+      if (forward) {
+        const accountId = codexLogAccountId(forward.authContext);
+        logCtx.provider = formatCodexProviderForLog(forward.providerName, accountId, config);
+        logCtx.codexAccountRef = forward.authContext.kind === "pool" || forward.authContext.kind === "main-pool"
+          ? codexAccountRefForLog(forward.authContext.accountId, config)
+          : "caller";
+      }
     } catch (err) {
       if (err instanceof CodexAccountCooldownError) {
         forwardAuthError = cooldownErrorResponse(err);

@@ -253,6 +253,7 @@ describe("usage log", () => {
         ordinal: 1,
         provider: "a",
         model: "m1",
+        codexAccountRef: "p123abc",
         adapter: "openai-chat",
         status: 503,
         durationMs: 4,
@@ -289,6 +290,7 @@ describe("usage log", () => {
       ordinal: 1,
       provider: "a",
       model: "m1",
+      codexAccountRef: "p123abc",
       adapter: "openai-chat",
       status: 503,
       durationMs: 4,
@@ -303,6 +305,22 @@ describe("usage log", () => {
       reasoningWireField: "reasoning_effort",
       reasoningWireValue: "high",
     }]);
+  });
+
+  test("persists only privacy-safe Codex account refs", () => {
+    const base = {
+      requestId: "ocx-account-ref",
+      timestamp: 1,
+      provider: "openai-p123abc",
+      model: "gpt-5.5",
+      status: 200,
+      durationMs: 1,
+      usageStatus: "unreported" as const,
+    };
+    expect(normalizeUsageEntryForTest({ ...base, codexAccountRef: "main" }).codexAccountRef).toBe("main");
+    expect(normalizeUsageEntryForTest({ ...base, codexAccountRef: "caller" }).codexAccountRef).toBe("caller");
+    expect(normalizeUsageEntryForTest({ ...base, codexAccountRef: "p123abc" }).codexAccountRef).toBe("p123abc");
+    expect(normalizeUsageEntryForTest({ ...base, codexAccountRef: "raw-account-id" as never })).not.toHaveProperty("codexAccountRef");
   });
 
   test("omits malformed optional attempt reasoning metadata without dropping the attempt", () => {
