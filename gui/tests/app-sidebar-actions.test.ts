@@ -1,9 +1,9 @@
 /**
- * Sidebar lifecycle actions keep the legacy icon + text row grammar.
+ * The desktop sidebar keeps the legacy icon + text stop row.
  *
- * The icon spacer is what aligns these labels with Language, Theme and GitHub. Keep
- * restart-Codex as a second full-width row instead of collapsing both actions into a
- * label plus trailing orbs, which shifts the label one icon column to the left.
+ * Reloading the Codex model catalog is an occasional recovery action, so it stays
+ * available on the mobile action surface and Models page without taking a permanent
+ * row in the desktop footer.
  */
 import { expect, test } from "bun:test";
 
@@ -12,15 +12,14 @@ const raw = await Bun.file(new URL("../src/App.tsx", import.meta.url)).text();
 const src = raw.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 const css = await Bun.file(new URL("../src/styles.css", import.meta.url)).text();
 
-test("the sidebar foot renders stop and restart as aligned icon-text rows", () => {
+test("the sidebar foot keeps only the aligned stop row", () => {
   const foot = src.slice(src.indexOf('className="sidebar-foot"'), src.indexOf("<SidebarGithubRow"));
   expect(foot).toContain('className="theme-toggle stop-toggle"');
-  expect(foot).toContain('className="theme-toggle restart-toggle"');
   expect(foot).toContain("handleStop");
-  expect(foot).toContain("handleCodexRestart");
   expect(foot).toContain("IconPower");
-  expect(foot).toContain("IconRefresh");
   expect(foot).toContain('<span className="mode">');
+  expect(foot).not.toContain("handleCodexRestart");
+  expect(foot).not.toContain("IconRefresh");
   expect(foot).not.toContain("sidebar-action-row");
 });
 
@@ -56,7 +55,7 @@ test("the restart action comes from the shared hook, not an inline duplicate", (
   expect(src).not.toContain("requestCodexRestart(");
 });
 
-test("desktop lifecycle rows inherit the same icon width and gap as Theme", () => {
+test("the desktop stop row inherits the same icon width and gap as Theme", () => {
   const rule = css.slice(css.indexOf(".theme-toggle {"), css.indexOf(".theme-toggle:hover"));
   expect(rule).toContain("gap: 9px");
   expect(rule).toContain("padding: 8px 10px");

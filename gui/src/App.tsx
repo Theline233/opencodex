@@ -288,13 +288,6 @@ export default function App() {
             <IconPower />
             <span className="mode">{stopping ? t("dash.stopping") : t("dash.stop")}</span>
           </button>
-          <button type="button" className="theme-toggle restart-toggle"
-            onClick={() => { void handleCodexRestart(); }} disabled={codexRestarting}
-            aria-label={codexRestarting ? t("dash.codexRestarting") : t("dash.codexRestart")}
-            title={codexRestarting ? t("dash.codexRestarting") : t("dash.codexRestart")}>
-            <IconRefresh />
-            <span className="mode">{codexRestarting ? t("dash.codexRestarting") : t("dash.codexRestart")}</span>
-          </button>
           <SidebarGithubRow
             apiBase={API_BASE}
             onOpenUpdate={() => {
