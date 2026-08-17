@@ -15,6 +15,10 @@ current_link="$deploy_root/current"
 previous_link="$deploy_root/previous"
 unit_dir="$HOME/.config/systemd/user"
 unit_path="$unit_dir/opencodex-proxy.service"
+catalog_publish_unit="opencodex-catalog-publish.service"
+catalog_publish_dropin_dir="$unit_dir/${catalog_publish_unit}.d"
+catalog_source="$HOME/.codex/opencodex-catalog.json"
+catalog_published="$HOME/opencodex-model-sync/opencodex-catalog.json"
 nginx_config_path="/etc/nginx/conf.d/opencodex-tailscale.conf"
 config_root="$HOME/.opencodex"
 production_port=10100
@@ -110,6 +114,30 @@ WantedBy=default.target
 EOF
   chmod 0644 "$temp"
   mv -f -- "$temp" "$unit_path"
+}
+
+publish_model_catalog() {
+  [ -f "$catalog_source" ] || fail "generated Codex model catalog is missing"
+  systemctl --user is-active --quiet opencodex-model-syncthing.service \
+    || fail "model catalog Syncthing service is not active"
+
+  # Start-rate controls belong to [Unit], not [Service]. Keep this repair in the
+  # deploy path so a previously broken drop-in cannot silently strand a new catalog.
+  mkdir -p "$catalog_publish_dropin_dir"
+  local temp="$catalog_publish_dropin_dir/override.conf.next.$$"
+  cat > "$temp" <<'EOF'
+[Unit]
+StartLimitIntervalSec=0
+StartLimitBurst=0
+EOF
+  chmod 0644 "$temp"
+  mv -f -- "$temp" "$catalog_publish_dropin_dir/override.conf"
+  systemctl --user daemon-reload
+  systemctl --user reset-failed "$catalog_publish_unit" 2>/dev/null || true
+  systemctl --user start "$catalog_publish_unit"
+  cmp -s "$catalog_source" "$catalog_published" \
+    || fail "published Codex model catalog does not match the generated catalog"
+  echo "CATALOG_PUBLISHED sha256=$(sha256sum "$catalog_published" | awk '{print $1}')"
 }
 
 install_nginx_config() {
@@ -260,6 +288,7 @@ activate_release() {
     systemctl --user daemon-reload
     systemctl --user restart opencodex-proxy.service || true
     wait_for_health "$production_port" 45 || true
+    publish_model_catalog || true
     exit "$rc"
   }
   trap rollback_activation ERR
@@ -269,6 +298,7 @@ activate_release() {
   install_nginx_config
   run_probe "$release_dir" "$production_port"
   systemctl --user is-active --quiet opencodex-proxy.service
+  publish_model_catalog
   trap - ERR
 
   printf 'release=%s\npath=%s\nprevious=%s\nactivated_at=%s\n' \
@@ -286,12 +316,16 @@ rollback_release() {
 
   atomic_link "$previous_target" "$current_link"
   atomic_link "$current_target" "$previous_link"
-  if ! systemctl --user restart opencodex-proxy.service || ! wait_for_health "$production_port" 45; then
+  if ! systemctl --user restart opencodex-proxy.service \
+    || ! wait_for_health "$production_port" 45 \
+    || ! publish_model_catalog
+  then
     atomic_link "$current_target" "$current_link"
     atomic_link "$previous_target" "$previous_link"
     systemctl --user restart opencodex-proxy.service || true
     wait_for_health "$production_port" 45 || true
-    fail "rollback target failed health check; restored the newer release"
+    publish_model_catalog || true
+    fail "rollback target failed validation; restored the newer release"
   fi
   printf 'release=%s\npath=%s\nprevious=%s\nrolled_back_at=%s\n' \
     "$(basename "$previous_target")" "$previous_target" "$current_target" "$(date -Iseconds)" \
@@ -307,6 +341,13 @@ show_status() {
     echo "health=ok"
   else
     echo "health=failed"
+  fi
+  echo "catalog_publisher_result=$(systemctl --user show -p Result --value "$catalog_publish_unit" 2>/dev/null || echo unknown)"
+  echo "catalog_syncthing=$(systemctl --user is-active opencodex-model-syncthing.service 2>/dev/null || true)"
+  if [ -f "$catalog_source" ] && [ -f "$catalog_published" ] && cmp -s "$catalog_source" "$catalog_published"; then
+    echo "catalog_published=current"
+  else
+    echo "catalog_published=stale"
   fi
   [ -f "$deploy_root/active-release" ] && cat "$deploy_root/active-release"
   return 0
