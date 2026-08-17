@@ -80,4 +80,20 @@ describe("codex warmup", () => {
       expect((err as Error).message).not.toContain("revoked");
     }
   });
+
+  test("an explicit empty fallback list keeps a quota anchor to one upstream request", async () => {
+    let calls = 0;
+    globalThis.fetch = (async () => {
+      calls += 1;
+      return Response.json({ error: { message: "model unavailable" } }, { status: 400 });
+    }) as typeof fetch;
+
+    await expect(warmCodexAccount({
+      accessToken: "a",
+      chatgptAccountId: "c",
+      model: "gpt-5.6-luna",
+      fallbackModels: [],
+    })).rejects.toMatchObject({ name: "CodexWarmupError", status: 400 });
+    expect(calls).toBe(1);
+  });
 });

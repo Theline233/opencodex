@@ -1145,6 +1145,26 @@ async function fetchPoolAccountQuota(accountId: string, forceRefresh = false, co
   }
 }
 
+/**
+ * Force one fresh WHAM read for the quota-anchor worker.
+ *
+ * Returning only `freshQuota` is intentional: a cached zero must never authorize synthetic
+ * traffic when the network read failed or a credential changed underneath the request.
+ */
+export async function fetchFreshCodexQuotaForAnchor(
+  config: OcxConfig,
+  accountId: string,
+): Promise<Omit<StoredAccountQuota, "updatedAt"> | null> {
+  if (accountId === MAIN_CODEX_ACCOUNT_ID) {
+    const result = await fetchMainAccountInfoAttempt(true, 1);
+    return result.freshQuota ?? null;
+  }
+  const account = configuredPoolAccount(getRuntimeConfig(config), accountId);
+  if (!account) return null;
+  const result = await fetchPoolAccountQuota(accountId, true, account.plan);
+  return result.freshQuota ?? null;
+}
+
 let primeInFlight: Promise<void> | null = null;
 let cooldownRecoveryInFlight: Promise<void> | null = null;
 

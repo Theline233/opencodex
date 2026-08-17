@@ -341,6 +341,13 @@ details are surfaced without exposing raw response bodies. Background revalidati
 off by default; it runs only when Token Guardian is enabled, the `chatgpt` refresh policy is
 `proactive`, and `tokenGuardian.codexWarmupEnabled` is true.
 
+Weekly quota anchoring is a separate explicit opt-in. With both `tokenGuardian.enabled` and
+`tokenGuardian.codexQuotaAnchorEnabled` set to true, opencodex waits until an account's recorded
+weekly reset is due, fetches a fresh WHAM quota snapshot, and sends one small real request only when
+`weeklyPercent` is exactly `0`. Any positive usage means the account already started its cycle and
+suppresses the request. A durable write-ahead ledger prevents a second attempt for the same account
+and cycle across failures or restarts. The default anchor model is `gpt-5.6-luna`.
+
 ## Restoring native Codex
 
 opencodex never traps you. **`ocx stop` is the single command that fully reverts to native Codex** — it

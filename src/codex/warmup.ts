@@ -23,6 +23,8 @@ export interface CodexWarmupOptions {
   chatgptAccountId: string;
   model?: string;
   timeoutMs?: number;
+  /** Override HTTP-400 model fallbacks. Pass [] when one synthetic request is the hard limit. */
+  fallbackModels?: string[];
 }
 
 const CODEX_RESPONSES_URL = "https://chatgpt.com/backend-api/codex/responses";
@@ -178,7 +180,7 @@ export async function warmCodexAccount(options: CodexWarmupOptions): Promise<voi
     // Retry with fallback models on 400 (model may not be available for this account).
     if (!(err instanceof CodexWarmupError) || err.status !== 400) throw err;
     let lastErr = err;
-    for (const fallback of FALLBACK_MODELS) {
+    for (const fallback of options.fallbackModels ?? FALLBACK_MODELS) {
       if (fallback === primaryModel) continue;
       try {
         await tryWarmup(options, fallback);

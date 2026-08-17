@@ -172,6 +172,120 @@ describe("token guardian", () => {
     expect(mock.calls()).toBe(0);
   });
 
+  test("weekly quota anchor sends one Luna request only for a fresh zero-percent account", async () => {
+    const now = Date.now();
+    const resetAt = Math.floor((now + 7 * 24 * 60 * 60_000) / 1000);
+    let whamCalls = 0;
+    let warmupCalls = 0;
+    let warmupBody: Record<string, unknown> | undefined;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).includes("/backend-api/wham/usage")) {
+        whamCalls += 1;
+        return Response.json({
+          plan_type: "plus",
+          rate_limit: {
+            primary_window: { used_percent: 0, reset_at: resetAt, limit_window_seconds: 7 * 24 * 60 * 60 },
+          },
+        });
+      }
+      if (String(input) === "https://chatgpt.com/backend-api/codex/responses") {
+        warmupCalls += 1;
+        warmupBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        return new Response('event: response.completed\ndata: {"type":"response.completed"}\n\n', {
+          headers: { "content-type": "text/event-stream" },
+        });
+      }
+      throw new Error(`unexpected fetch: ${String(input)}`);
+    }) as typeof fetch;
+    writeConfig({
+      tokenGuardian: {
+        enabled: true,
+        codexWarmupEnabled: true,
+        codexQuotaAnchorEnabled: true,
+      },
+      providers: { openai: { adapter: "openai-responses", baseUrl: "https://chatgpt.com/backend-api/codex", authMode: "forward", codexAccountMode: "pool", refreshPolicy: "lazy-only" } },
+      codexAccounts: [{ id: "acct-anchor", email: "anchor@example.test", isMain: false }],
+    });
+    saveCodexAccountCredential("acct-anchor", {
+      accessToken: "anchor-access",
+      refreshToken: "anchor-refresh",
+      expiresAt: now + 3600_000,
+      chatgptAccountId: "anchor-chatgpt",
+    });
+
+    const first = await guardianSweep(now);
+    const second = await guardianSweep(now + 60_000);
+
+    expect(first.quotaAnchored).toEqual(["codex:acct-anchor"]);
+    expect(second.quotaAnchored).toEqual([]);
+    expect(whamCalls).toBe(1);
+    expect(warmupCalls).toBe(1);
+    expect(warmupBody).toMatchObject({ model: "gpt-5.6-luna", input: WARMUP_INPUT, stream: true, store: false });
+  });
+
+  test("weekly quota anchor never warms an account whose fresh usage is above zero", async () => {
+    const now = Date.now();
+    let warmupCalls = 0;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      if (String(input).includes("/backend-api/wham/usage")) {
+        return Response.json({
+          plan_type: "plus",
+          rate_limit: {
+            primary_window: {
+              used_percent: 0.01,
+              reset_at: Math.floor((now + 7 * 24 * 60 * 60_000) / 1000),
+              limit_window_seconds: 7 * 24 * 60 * 60,
+            },
+          },
+        });
+      }
+      warmupCalls += 1;
+      return new Response('event: response.completed\ndata: {"type":"response.completed"}\n\n');
+    }) as typeof fetch;
+    writeConfig({
+      tokenGuardian: { enabled: true, codexQuotaAnchorEnabled: true },
+      providers: { openai: { adapter: "openai-responses", baseUrl: "https://chatgpt.com/backend-api/codex", authMode: "forward", codexAccountMode: "pool" } },
+      codexAccounts: [{ id: "acct-used", email: "used@example.test", isMain: false }],
+    });
+    saveCodexAccountCredential("acct-used", {
+      accessToken: "used-access",
+      refreshToken: "used-refresh",
+      expiresAt: now + 3600_000,
+      chatgptAccountId: "used-chatgpt",
+    });
+
+    const result = await guardianSweep(now);
+
+    expect(result.quotaUsagePresent).toEqual(["codex:acct-used"]);
+    expect(result.quotaAnchored).toEqual([]);
+    expect(warmupCalls).toBe(0);
+  });
+
+  test("a corrupt once-per-cycle ledger fails closed before quota or warmup traffic", async () => {
+    let calls = 0;
+    globalThis.fetch = (async () => {
+      calls += 1;
+      return Response.json({});
+    }) as typeof fetch;
+    writeConfig({
+      tokenGuardian: { enabled: true, codexQuotaAnchorEnabled: true },
+      providers: { openai: { adapter: "openai-responses", baseUrl: "https://chatgpt.com/backend-api/codex", authMode: "forward", codexAccountMode: "pool" } },
+      codexAccounts: [{ id: "acct-corrupt", email: "corrupt@example.test", isMain: false }],
+    });
+    saveCodexAccountCredential("acct-corrupt", {
+      accessToken: "corrupt-access",
+      refreshToken: "corrupt-refresh",
+      expiresAt: Date.now() + 3600_000,
+      chatgptAccountId: "corrupt-chatgpt",
+    });
+    writeFileSync(join(tmp, "ocx", "codex-quota-anchor-state.json"), "{not-json");
+
+    const result = await guardianSweep(Date.now());
+
+    expect(result.quotaAnchorFailed).toEqual(["state"]);
+    expect(calls).toBe(0);
+  });
+
   test("codex pool warmup validates stale far-from-expiry accounts when explicitly enabled", async () => {
     const mock = mockWarmupFetch();
     writeConfig({

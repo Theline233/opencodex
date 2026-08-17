@@ -302,6 +302,12 @@ fallback 行为，参见 [Sub-agent Surface](/guides/sub-agent-surface/)。
 原始响应正文。后台重新验证是独立功能，默认关闭；只有在启用 Token Guardian、将 `chatgpt` 刷新策略设为
 `proactive`，并且 `tokenGuardian.codexWarmupEnabled` 为 true 时才会运行。
 
+周额度锚定是另一个需要明确选择加入的功能。同时开启 `tokenGuardian.enabled` 与
+`tokenGuardian.codexQuotaAnchorEnabled` 后，opencodex 会等到账户记录的周重置时间，获取一份
+新鲜 WHAM 额度快照，并且只在 `weeklyPercent` 严格等于 `0` 时发送一次很小的真实请求。任何
+大于 0 的使用量都表示本周期已由正常使用启动，因此不会发送请求。持久化预写记录会防止同一
+账户、同一周期在失败或重启后再次尝试。默认锚定模型为 `gpt-5.6-luna`。
+
 ## 恢复原生 Codex
 
 opencodex 绝不会把你困住。**`ocx stop` 是完全恢复原生 Codex 的单一命令** —— 它会停止 proxy、

@@ -22,7 +22,14 @@ install or operations task authorizes, and an agent must never perform or
 auto-answer them — even when the surrounding task is approved, even when the
 credential is sitting right there.
 
-The current one is **starring the repository on GitHub**.
+The current unconditional prohibition is **starring the repository on GitHub**.
+
+The optional Codex weekly quota anchor is also a consent-bearing action because it sends one real
+model request and consumes a small amount of the user's included quota. Never enable
+`tokenGuardian.codexQuotaAnchorEnabled` during install, upgrade, repair, or ordinary startup, and
+never infer consent from Token Guardian already being enabled. A direct user request to enable
+zero-usage weekly anchoring is required. The runtime still fails closed unless a fresh WHAM reading
+is exactly `0%`, and its durable ledger permits at most one attempt per account and cycle.
 
 ### Do not
 

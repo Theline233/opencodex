@@ -227,6 +227,15 @@ Leave this disabled unless you understand Anthropic account policy risk. Prefer 
 | `codexWarmupEnabled?` | `boolean` | `false` | Opt into synthetic Codex pool-account validation. |
 | `codexWarmupMaxAgeSeconds?` | `number` | `691200` | Revalidate an account after 8 days. |
 | `codexWarmupModel?` | `string` | `gpt-5.4-mini` | Native model used for optional warmup. |
+| `codexQuotaAnchorEnabled?` | `boolean` | `false` | Send one real request after a weekly reset only when a fresh quota read is exactly 0%. |
+| `codexQuotaAnchorModel?` | `string` | `gpt-5.6-luna` | Native model used for the zero-usage weekly anchor. |
+
+The quota anchor persists a per-account, per-cycle write-ahead ledger in
+`codex-quota-anchor-state.json`. Positive usage, unknown or stale quota evidence, paused accounts,
+and unavailable credentials never send a request. Once an attempt starts, it is not repeated in
+that cycle even if the request fails or the process exits. The feature also requires the global
+`tokenGuardian.enabled` switch; lower `tickSeconds` only controls how soon after the observed reset
+the guarded check runs.
 
 ## Fixed provider endpoints
 

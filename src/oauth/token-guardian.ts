@@ -31,6 +31,7 @@ import { isCanonicalOpenAiForwardProvider, OPENAI_CODEX_PROVIDER_ID } from "../p
 import { providerCodexAccountMode } from "../providers/registry";
 import { captureConfigGeneration, type GenerationContext } from "../lib/state-store-sweeper";
 import { tryAcquireNativeMainProfileClaim } from "../codex/native-main-admission";
+import { runCodexQuotaAnchorSweep } from "../codex/quota-anchor";
 
 export interface TokenGuardianHandle {
   stop(): void;
@@ -40,6 +41,9 @@ export interface GuardianSweepResult {
   enabled: boolean;
   refreshed: string[];
   warmed: string[];
+  quotaAnchored: string[];
+  quotaUsagePresent: string[];
+  quotaAnchorFailed: string[];
   failed: string[];
   skippedBackoff: string[];
 }
@@ -53,6 +57,7 @@ const DEFAULTS = {
   failureBackoffMaxSeconds: 3600,
   codexWarmupMaxAgeSeconds: 691_200, // 8d — matches Codex managed-auth last_refresh cadence.
   codexWarmupModel: "gpt-5.4-mini",
+  codexQuotaAnchorModel: "gpt-5.6-luna",
 };
 
 interface BackoffEntry {
@@ -82,9 +87,13 @@ function resolved(g: OcxTokenGuardianConfig | undefined) {
     leadSeconds: num(g?.leadSeconds, DEFAULTS.leadSeconds, 0),
     backoffBaseSeconds: num(g?.failureBackoffBaseSeconds, DEFAULTS.failureBackoffBaseSeconds, 0),
     backoffMaxSeconds: num(g?.failureBackoffMaxSeconds, DEFAULTS.failureBackoffMaxSeconds, 0),
-    codexWarmupEnabled: g?.codexWarmupEnabled === true,
+    // The quota anchor is the stricter synthetic-traffic policy. When both legacy warmup and
+    // anchoring are configured, anchoring wins so one sweep cannot send two real model requests.
+    codexWarmupEnabled: g?.codexWarmupEnabled === true && g?.codexQuotaAnchorEnabled !== true,
     codexWarmupMaxAgeSeconds: num(g?.codexWarmupMaxAgeSeconds, DEFAULTS.codexWarmupMaxAgeSeconds, 60),
     codexWarmupModel: g?.codexWarmupModel?.trim() || DEFAULTS.codexWarmupModel,
+    codexQuotaAnchorEnabled: g?.codexQuotaAnchorEnabled === true,
+    codexQuotaAnchorModel: g?.codexQuotaAnchorModel?.trim() || DEFAULTS.codexQuotaAnchorModel,
   };
 }
 
@@ -133,7 +142,16 @@ export async function guardianSweep(nowMs: number = Date.now()): Promise<Guardia
   const writerGeneration = captureConfigGeneration();
   const config: OcxConfig = loadConfig();
   const g = config.tokenGuardian;
-  const result: GuardianSweepResult = { enabled: !!g?.enabled, refreshed: [], warmed: [], failed: [], skippedBackoff: [] };
+  const result: GuardianSweepResult = {
+    enabled: !!g?.enabled,
+    refreshed: [],
+    warmed: [],
+    quotaAnchored: [],
+    quotaUsagePresent: [],
+    quotaAnchorFailed: [],
+    failed: [],
+    skippedBackoff: [],
+  };
   if (!g?.enabled) return result;
 
   const opts = resolved(g);
@@ -247,6 +265,23 @@ export async function guardianSweep(nowMs: number = Date.now()): Promise<Guardia
   }
 
   await runWithConcurrency(tasks, opts.concurrency);
+  if (
+    opts.codexQuotaAnchorEnabled
+    && openai
+    && openai.disabled !== true
+    && isCanonicalOpenAiForwardProvider(openai)
+  ) {
+    try {
+      const anchor = await runCodexQuotaAnchorSweep(config, opts.codexQuotaAnchorModel);
+      result.quotaAnchored.push(...anchor.anchored.map(id => `codex:${id}`));
+      result.quotaUsagePresent.push(...anchor.usagePresent.map(id => `codex:${id}`));
+      result.quotaAnchorFailed.push(...anchor.failed.map(id => `codex:${id}`));
+    } catch {
+      // A corrupt/unreadable once-per-cycle ledger fails closed: token refresh work remains valid,
+      // but no synthetic Codex request may leave until the operator repairs the state file.
+      result.quotaAnchorFailed.push("state");
+    }
+  }
   return result;
 }
 
@@ -291,8 +326,8 @@ export function startTokenGuardian(): TokenGuardianHandle {
   const runSweep = () => {
     void guardianSweep()
       .then(r => {
-        if (r.enabled && (r.refreshed.length || r.warmed.length || r.failed.length)) {
-          console.log(`🛡️  token-guardian: refreshed ${r.refreshed.length}, warmed ${r.warmed.length}, failed ${r.failed.length}`);
+        if (r.enabled && (r.refreshed.length || r.warmed.length || r.quotaAnchored.length || r.quotaAnchorFailed.length || r.failed.length)) {
+          console.log(`🛡️  token-guardian: refreshed ${r.refreshed.length}, warmed ${r.warmed.length}, quota-anchored ${r.quotaAnchored.length}, failed ${r.failed.length + r.quotaAnchorFailed.length}`);
         }
       })
       .catch(err => console.log(`token-guardian sweep error: ${err instanceof Error ? err.message : String(err)}`))

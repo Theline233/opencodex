@@ -1161,6 +1161,13 @@ export interface OcxTokenGuardianConfig {
   codexWarmupMaxAgeSeconds?: number;
   /** Model used for optional Codex pool warmup. Default gpt-5.4-mini. */
   codexWarmupModel?: string;
+  /**
+   * Opt into one real Codex request after a weekly reset, but only when fresh WHAM usage is
+   * exactly 0%. Default false because this intentionally consumes a small amount of quota.
+   */
+  codexQuotaAnchorEnabled?: boolean;
+  /** Model used for the zero-usage weekly anchor. Default gpt-5.6-luna. */
+  codexQuotaAnchorModel?: string;
 }
 
 export interface OcxImagesConfig {

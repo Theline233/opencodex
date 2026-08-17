@@ -183,6 +183,13 @@ affinity。这些策略不能规避 provider enforcement。
 | `codexWarmupEnabled?` | `boolean` | `false` | 启用合成的 Codex 池账户验证。 |
 | `codexWarmupMaxAgeSeconds?` | `number` | `691200` | 8 天后重新验证账户。 |
 | `codexWarmupModel?` | `string` | `gpt-5.4-mini` | 用于可选预热的原生模型。 |
+| `codexQuotaAnchorEnabled?` | `boolean` | `false` | 周重置后仅在新鲜额度读数严格为 0% 时发送一次真实请求。 |
+| `codexQuotaAnchorModel?` | `string` | `gpt-5.6-luna` | 零使用量周额度锚定所用的原生模型。 |
+
+额度锚定会在 `codex-quota-anchor-state.json` 中持久化每个账户、每个周期的预写记录。使用量
+大于 0、额度未知或过期、账户已暂停、凭据不可用时都不会发送请求。一次尝试开始后，即使请求
+失败或进程退出，本周期也不会再次尝试。该功能还要求全局 `tokenGuardian.enabled` 已开启；调低
+`tickSeconds` 只会缩短在已记录重置时间之后执行受保护检查的等待时间。
 
 ## 固定提供者端点
 
