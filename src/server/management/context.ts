@@ -1,5 +1,6 @@
 import type { OcxConfig } from "../../types";
 import type { NativeProfileApiDeps } from "../../codex/native-profile-api";
+import type { NativeMainDeviceLoginController } from "../../codex/native-main-device-login";
 import type { StartupInstallAction } from "../startup-action-control";
 import type { ManagementPrincipal } from "../management-auth";
 import type { CatalogModel } from "../../codex/catalog";
@@ -49,6 +50,8 @@ export interface ManagementApiDeps {
    * leaves this unset, so the route creates its normal NativeProfileManager.
    */
   nativeProfileApi?: NativeProfileApiDeps;
+  /** Device-login controller seam for management-boundary tests. */
+  nativeMainDeviceLoginController?: NativeMainDeviceLoginController;
 }
 
 

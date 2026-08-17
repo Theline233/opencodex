@@ -3,6 +3,7 @@ import { useT } from "../i18n/shared";
 import { IconPlus } from "../icons";
 import { EmptyState } from "../ui";
 import AddCodexAccountModal from "./AddCodexAccountModal";
+import MainAccountLoginModal from "./MainAccountLoginModal";
 import { useCodexAccountPool, type CodexAccountPoolController } from "../hooks/useCodexAccountPool";
 import type { ReactNode } from "react";
 import type { CodexAccountModeState } from "../codex-multi-state";
@@ -65,6 +66,7 @@ export default function CodexAccountPool({ apiBase, accountModeState = null, ban
   } = controller;
   const [confirm, setConfirm] = useState<CodexAccountEntry | null>(null);
   const [showAdd, setShowAdd] = useState(false);
+  const [showMainLogin, setShowMainLogin] = useState(false);
   const [reauthId, setReauthId] = useState<string | null>(null);
   const [actionFeedback, setActionFeedback] = useState<string | null>(null);
   const [actionFeedbackTone, setActionFeedbackTone] = useState<"ok" | "err" | null>(null);
@@ -317,6 +319,7 @@ export default function CodexAccountPool({ apiBase, accountModeState = null, ban
             pauseUpdatingId={pauseUpdatingId}
             pauseBusy={pauseBusy}
             onOpenReset={openResetPopup}
+            onMainLogin={() => setShowMainLogin(true)}
             onCopyDoctor={showDoctorCopy ? copyDoctor : undefined}
             doctorCopyOutcomeFor={showDoctorCopy ? doctorCopy.outcomeFor : undefined}
           />
@@ -414,6 +417,13 @@ export default function CodexAccountPool({ apiBase, accountModeState = null, ban
           reauthAccountId={reauthId ?? undefined}
           onClose={closeAddModal}
           onAdded={handleAccountAdded}
+        />
+      )}
+      {showMainLogin && (
+        <MainAccountLoginModal
+          apiBase={apiBase}
+          onClose={() => setShowMainLogin(false)}
+          onLoggedIn={() => { void load(); }}
         />
       )}
     </div>

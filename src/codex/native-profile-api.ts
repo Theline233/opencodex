@@ -134,6 +134,22 @@ async function withRecoveryGateTransition<T>(
   }
 }
 
+export async function switchNativeMainProfileWithDrain(
+  manager: NativeProfileManager,
+  target: string,
+  deps: NativeProfileApiDeps = {},
+): Promise<Record<string, unknown>> {
+  return withMainRequestDrain(deps, () => withRecoveryGateTransition(
+    manager,
+    deps,
+    () => withNativeMainApiOperation(
+      manager,
+      () => manager.switch(target, true),
+      { mode: "exclusive", waitMs: deps.drainTimeoutMs ?? 10_000 },
+    ),
+  ));
+}
+
 export async function handleNativeProfileAPI(
   req: Request,
   url: URL,
@@ -200,15 +216,17 @@ export async function handleNativeProfileAPI(
     if (url.pathname === "/api/native-main-profiles/switch" && req.method === "POST") {
       const input = await body(req);
       if (typeof input.target !== "string") throw new NativeProfileError("INVALID_REQUEST", "A target profile is required.", 400);
-      const switched = await withMainRequestDrain(deps, () => withRecoveryGateTransition(
-        manager,
-        deps,
-        () => withNativeMainApiOperation(
-          manager,
-          () => manager.switch(input.target as string, input.confirmedStopped === true),
-          { mode: "exclusive", waitMs: deps.drainTimeoutMs ?? 10_000 },
-        ),
-      ));
+      const switched = input.confirmedStopped === true
+        ? await switchNativeMainProfileWithDrain(manager, input.target as string, deps)
+        : await withMainRequestDrain(deps, () => withRecoveryGateTransition(
+            manager,
+            deps,
+            () => withNativeMainApiOperation(
+              manager,
+              () => manager.switch(input.target as string, false),
+              { mode: "exclusive", waitMs: deps.drainTimeoutMs ?? 10_000 },
+            ),
+          ));
       return jsonResponse(
         switched,
         200,

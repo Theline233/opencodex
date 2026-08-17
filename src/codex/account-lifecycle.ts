@@ -66,6 +66,16 @@ export function applyConfirmedMainCodexAccountTransition(
   return true;
 }
 
+/**
+ * Publish a transaction-confirmed credential replacement for the same physical
+ * main account. Unlike an identity transition, a re-login must clear terminal
+ * reauth/quota/affinity state even when the ChatGPT account id is unchanged.
+ */
+export function applyConfirmedMainCodexCredentialRefresh(accountId: string): void {
+  if (accountId) observedMainChatgptAccountId = accountId;
+  purgeMainCodexAccountRuntimeState();
+}
+
 export function resetMainCodexAccountIdentityTrackingForTests(): void {
   observedMainChatgptAccountId = undefined;
   clearMainAccountCredentialPresence();

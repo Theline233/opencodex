@@ -258,6 +258,11 @@ export async function handleManagementAPI(
     return handleNativeProfileAPI(req, url, config, deps.nativeProfileApi);
   }
 
+  if (url.pathname.startsWith("/api/native-main-login")) {
+    const { handleNativeMainDeviceLoginAPI } = await import("../codex/native-main-device-login");
+    return handleNativeMainDeviceLoginAPI(req, url, config, deps.nativeMainDeviceLoginController);
+  }
+
   if (url.pathname.startsWith("/api/codex-auth/")) {
     const { handleCodexAuthAPI } = await import("../codex/auth-api");
     const { ConfigMutationLockError } = await import("../config");

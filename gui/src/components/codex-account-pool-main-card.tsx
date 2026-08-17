@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { IconLock, IconPause, IconPlay, IconPlus, IconRefresh, IconTicket } from "../icons";
+import { IconKey, IconLock, IconPause, IconPlay, IconPlus, IconRefresh, IconTicket } from "../icons";
 import QuotaBars from "./QuotaBars";
 import { CodexPauseToggleLabel, CodexTicketBadge } from "./codex-account-pool-helpers";
 import type { CodexAccountEntry } from "./codex-account-pool-types";
@@ -29,6 +29,7 @@ export function CodexAccountPoolMainCard({
   pauseUpdatingId,
   pauseBusy,
   onOpenReset,
+  onMainLogin,
   onCopyDoctor,
   doctorCopyOutcomeFor,
 }: {
@@ -43,6 +44,7 @@ export function CodexAccountPoolMainCard({
   pauseUpdatingId: string | null;
   pauseBusy: boolean;
   onOpenReset: (account: CodexAccountEntry) => void;
+  onMainLogin: () => void;
   onCopyDoctor?: (accountId: string) => void;
   doctorCopyOutcomeFor?: (accountId: string) => "copied" | "unavailable" | null;
 }) {
@@ -118,7 +120,14 @@ export function CodexAccountPoolMainCard({
             />
           </button>
         )}
-        <span className="card-right"><IconLock width={14} /> {t("codexAuth.appLogin")}</span>
+        <button
+          type="button"
+          className={`btn btn-sm ${showReauth ? "btn-primary" : "btn-ghost"} codex-auth-action-btn card-right`}
+          onClick={onMainLogin}
+          title={t("codexAuth.mainLoginButton")}
+        >
+          <IconKey width={14} /> {t("codexAuth.mainLoginButton")}
+        </button>
       </div>
       <div className="card-sub">{main?.email || t("codexAuth.appLogin")}{main?.plan ? ` · ${main.plan}` : ""}</div>
       {main && (

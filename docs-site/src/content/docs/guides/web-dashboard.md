@@ -105,6 +105,11 @@ catalog entry.
 
 The **Codex Auth** page manages the native ChatGPT/Codex route:
 
+- **Log in to main account** starts the official Codex CLI device-authorization flow in an isolated
+  staging home and shows the OpenAI verification URL plus one-time code. Before the first web login,
+  the existing identity is registered in the native-profile vault so a different identity can be
+  imported and switched transactionally. OpenCodex atomically refreshes the same identity, and keeps
+  the original login unchanged if authorization or activation fails.
 - Manually choosing an account changes the next new Codex session; an already-bound thread keeps its
   current account for that manual switch.
 - Thread affinity prevents per-request flapping. With quota auto-switch enabled, a long-running
@@ -178,6 +183,7 @@ The GUI is a thin client over the proxy's JSON management API. Useful endpoints 
 | `GET /api/codex-auth/accounts?refresh=1` | List main and pool accounts, force quota refresh, and report main-account `hasCredential` / terminal `needsReauth` state. |
 | `PUT /api/codex-auth/active` · `PUT /api/codex-auth/auto-switch` · `PUT /api/codex-auth/failover` | Select the account for the next request and configure pool routing. |
 | `POST /api/codex-auth/login` · `GET /api/codex-auth/login-status` | Add a pool account through browser login. |
+| `POST /api/native-main-login/start` · `GET /api/native-main-login/status` · `POST /api/native-main-login/cancel` | Start, monitor, or cancel the main-account Codex CLI device login. The one-time code is returned only to the authenticated dashboard session and is never persisted. |
 | `GET /api/logs?tail=50&limit=20&offset=0&provider=...&status=5xx` | Read recent request metadata with optional tail, provider, and exact/class status filters. With `limit`/`offset`, paging walks backward from the newest row (`offset=0` returns the latest page). Response shape: `{ timeZone, total, logs }` where `total` is the filtered row count before pagination. |
 | `GET` / `PUT /api/subagent-models` | Read or set the five featured `spawn_agent` override models. |
 | `POST /api/stop` | Stop the proxy/service, restore native Codex, and exit. |
