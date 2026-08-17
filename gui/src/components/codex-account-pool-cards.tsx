@@ -159,12 +159,7 @@ export function CodexAccountPoolCards({
               onChange={(priority) => onPriorityChange(a, priority)}
             />
           </div>
-          <CodexSubscriptionStatus
-            account={a}
-            refreshing={subscriptionRefreshingId === a.id}
-            refreshBusy={subscriptionRefreshBusy}
-            onRefresh={() => onRefreshSubscription(a)}
-          />
+          <CodexSubscriptionStatus account={a} />
           <CodexAccountUsage7d account={a} />
           {healthSummary && (
             <div className="card-sub faint">{healthSummary}</div>

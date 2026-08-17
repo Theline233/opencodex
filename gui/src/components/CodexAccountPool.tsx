@@ -237,7 +237,7 @@ export default function CodexAccountPool({ apiBase, accountModeState = null, ban
     const result = await controller.refreshAllSubscriptions();
     if (!result.ok) {
       if (result.reason === "busy") return;
-      showActionFeedback(t("codexAuth.subscriptionRefreshAllFailed"), true);
+      showActionFeedback(t("codexAuth.subscriptionRefreshAllFailed"), "err");
       return;
     }
     showActionFeedback(result.failed > 0
@@ -248,7 +248,7 @@ export default function CodexAccountPool({ apiBase, accountModeState = null, ban
       : result.total === 0
         ? t("codexAuth.subscriptionRefreshAllNone")
         : t("codexAuth.subscriptionRefreshAllSucceeded", { count: String(result.succeeded) }),
-    result.failed > 0);
+    result.failed > 0 ? "warn" : "ok");
   };
 
   const pauseExhausted = async () => {

@@ -286,6 +286,6 @@ test("bulk subscription refresh reports partial success from one server request"
   });
 
   expect(calls).toBe(1);
-  const feedback = host.querySelector(".codex-auth-page-head__feedback.is-err");
+  const feedback = host.querySelector(".codex-auth-page-head__feedback.is-warn");
   expect(feedback?.textContent).toContain("1 succeeded, 1 failed");
 });
