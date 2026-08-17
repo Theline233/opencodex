@@ -1,10 +1,9 @@
 /**
- * The sidebar's proxy-action row: stop and restart-Codex as paired icon controls.
+ * Sidebar lifecycle actions keep the legacy icon + text row grammar.
  *
- * These assert the wiring that a unit test of the transport cannot see — that both
- * surfaces exist, that they carry accessible names, and that the destructive one is
- * still visually marked as destructive after being demoted from a full-width button
- * to a 28px orb.
+ * The icon spacer is what aligns these labels with Language, Theme and GitHub. Keep
+ * restart-Codex as a second full-width row instead of collapsing both actions into a
+ * label plus trailing orbs, which shifts the label one icon column to the left.
  */
 import { expect, test } from "bun:test";
 
@@ -13,14 +12,16 @@ const raw = await Bun.file(new URL("../src/App.tsx", import.meta.url)).text();
 const src = raw.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 const css = await Bun.file(new URL("../src/styles.css", import.meta.url)).text();
 
-test("the sidebar foot pairs stop with restart-Codex", () => {
-  const row = src.slice(src.indexOf('className="sidebar-action-row"'), src.indexOf("</div>", src.indexOf('className="sidebar-action-orbs"')));
-  expect(row).toContain("handleStop");
-  expect(row).toContain("handleCodexRestart");
-  expect(row).toContain("IconPower");
-  expect(row).toContain("IconRefresh");
-  // The destructive control keeps its danger marking as an orb.
-  expect(row).toContain("sidebar-orb--danger");
+test("the sidebar foot renders stop and restart as aligned icon-text rows", () => {
+  const foot = src.slice(src.indexOf('className="sidebar-foot"'), src.indexOf("<SidebarGithubRow"));
+  expect(foot).toContain('className="theme-toggle stop-toggle"');
+  expect(foot).toContain('className="theme-toggle restart-toggle"');
+  expect(foot).toContain("handleStop");
+  expect(foot).toContain("handleCodexRestart");
+  expect(foot).toContain("IconPower");
+  expect(foot).toContain("IconRefresh");
+  expect(foot).toContain('<span className="mode">');
+  expect(foot).not.toContain("sidebar-action-row");
 });
 
 test("the mobile top bar carries the same pair", () => {
@@ -42,7 +43,8 @@ test("every action orb carries an accessible name", () => {
   // bracket: arrow functions inside JSX attributes contain ">" themselves.
   const chunks = src.split("<button").slice(1);
   const orbs = chunks.filter(chunk => chunk.slice(0, 400).includes("sidebar-orb"));
-  expect(orbs.length).toBeGreaterThanOrEqual(4);
+  // App owns the two mobile lifecycle orbs; desktop lifecycle actions carry text.
+  expect(orbs.length).toBe(2);
   for (const orb of orbs) expect(orb.slice(0, 400)).toContain("aria-label");
 });
 
@@ -54,8 +56,11 @@ test("the restart action comes from the shared hook, not an inline duplicate", (
   expect(src).not.toContain("requestCodexRestart(");
 });
 
-test("the stale full-width stop button markup is gone", () => {
-  expect(src).not.toContain('className="theme-toggle stop-toggle"');
+test("desktop lifecycle rows inherit the same icon width and gap as Theme", () => {
+  const rule = css.slice(css.indexOf(".theme-toggle {"), css.indexOf(".theme-toggle:hover"));
+  expect(rule).toContain("gap: 9px");
+  expect(rule).toContain("padding: 8px 10px");
+  expect(css).not.toContain(".sidebar-action-row");
 });
 
 test("mobile orbs keep a 44px touch target", () => {
@@ -117,4 +122,3 @@ test("every restart string exists in the English source with its slots intact", 
   expect(en["dash.codexRestartPartial"]).toContain("{count}");
   expect(en["dash.codexRestartFailed"]).toContain("{status}");
 });
-

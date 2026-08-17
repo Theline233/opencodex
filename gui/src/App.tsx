@@ -281,23 +281,20 @@ export default function App() {
             aria-label={`${t("theme.label")}: ${t(THEME_TKEY[theme])}`} title={`${t("theme.label")}: ${t(THEME_TKEY[theme])}`}>
             <ThemeIcon /> <span className="mode">{t(THEME_TKEY[theme])}</span>
           </button>
-          <div className="sidebar-action-row">
-            <span className="sidebar-action-label">{t("dash.actions")}</span>
-            <div className="sidebar-action-orbs">
-              <button type="button" className="sidebar-orb sidebar-orb--danger"
-                onClick={handleStop} disabled={stopping}
-                aria-label={stopping ? t("dash.stopping") : t("dash.stop")}
-                title={stopping ? t("dash.stopping") : t("dash.stop")}>
-                <IconPower />
-              </button>
-              <button type="button" className="sidebar-orb"
-                onClick={() => { void handleCodexRestart(); }} disabled={codexRestarting}
-                aria-label={codexRestarting ? t("dash.codexRestarting") : t("dash.codexRestart")}
-                title={codexRestarting ? t("dash.codexRestarting") : t("dash.codexRestart")}>
-                <IconRefresh />
-              </button>
-            </div>
-          </div>
+          <button type="button" className="theme-toggle stop-toggle"
+            onClick={handleStop} disabled={stopping}
+            aria-label={stopping ? t("dash.stopping") : t("dash.stop")}
+            title={stopping ? t("dash.stopping") : t("dash.stop")}>
+            <IconPower />
+            <span className="mode">{stopping ? t("dash.stopping") : t("dash.stop")}</span>
+          </button>
+          <button type="button" className="theme-toggle restart-toggle"
+            onClick={() => { void handleCodexRestart(); }} disabled={codexRestarting}
+            aria-label={codexRestarting ? t("dash.codexRestarting") : t("dash.codexRestart")}
+            title={codexRestarting ? t("dash.codexRestarting") : t("dash.codexRestart")}>
+            <IconRefresh />
+            <span className="mode">{codexRestarting ? t("dash.codexRestarting") : t("dash.codexRestart")}</span>
+          </button>
           <SidebarGithubRow
             apiBase={API_BASE}
             onOpenUpdate={() => {
