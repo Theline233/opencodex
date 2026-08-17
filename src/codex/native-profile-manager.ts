@@ -22,7 +22,10 @@ import {
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { atomicWriteFileAsync } from "../config";
 import { hardenSecretDirAsync, hardenSecretPathAsync } from "../lib/windows-secret-acl";
-import { applyConfirmedMainCodexAccountTransition } from "./account-lifecycle";
+import {
+  applyConfirmedMainCodexAccountTransition,
+  applyConfirmedMainCodexCredentialRefresh,
+} from "./account-lifecycle";
 import {
   assertStableLockFile,
   openStableLockFile,
@@ -1190,6 +1193,91 @@ export class NativeProfileManager {
         );
       }
       return result!;
+    });
+  }
+
+  /**
+   * Replace the active profile's credential from a completed staging login when
+   * the physical ChatGPT identity is unchanged. A different identity is left in
+   * staging so the caller can import it with finishStage() and switch normally.
+   */
+  async refreshActiveFromStage(
+    stageId: string,
+    writerToken: string,
+  ): Promise<{ refreshed: boolean; effectiveCodexHome: string }> {
+    return this.withLock(async () => {
+      const ownedStage = this.stageStore.verify(stageId, writerToken);
+      if (ownedStage.expired) {
+        const cleanup = await this.cleanupRegisteredStage(ownedStage, "expired");
+        throw new NativeProfileError(
+          "STAGING_EXPIRED",
+          "The native-login staging lease expired.",
+          410,
+          false,
+          cleanup.removed ? undefined : true,
+          cleanup.plaintextMayRemain,
+        );
+      }
+      let target: NativeEnvelopeSnapshot | null = null;
+      let current: NativeEnvelopeSnapshot | null = null;
+      let key: NativeProfileKey | null = null;
+      let authReplaced = false;
+      try {
+        this.assertNoPendingRecovery();
+        requireFileCredentialStore(this.context);
+        target = readNativeEnvelope(join(ownedStage.path, "auth.json"));
+        assertPathIdentity(ownedStage.path, ownedStage.identity, "The native-login staging directory");
+        current = readNativeEnvelope(this.context.authPath);
+        const vault = this.requireVault();
+        key = await this.keyForVault(vault);
+        const active = this.assertCurrentIdentity(vault, current, key);
+        const targetIdentityHash = nativeIdentityHash(key.key, target.accountId);
+        if (targetIdentityHash !== active.identityHash) {
+          return { refreshed: false, effectiveCodexHome: this.context.codexHome };
+        }
+
+        try {
+          this.assertOperationStorageStable();
+          await this.atomicWrite(this.context.authPath, target.text);
+          authReplaced = true;
+          const observed = this.verifyWrittenEnvelope(target.digest, active.identityHash, key);
+          observed.raw.fill(0);
+        } catch (cause) {
+          if (authReplaced) {
+            try {
+              this.assertOperationStorageStable();
+              await this.atomicWrite(this.context.authPath, current.text);
+              const restored = this.verifyWrittenEnvelope(current.digest, active.identityHash, key);
+              restored.raw.fill(0);
+            } catch {
+              throw new NativeProfileError(
+                "AUTH_RESTORE_FAILED",
+                "The refreshed native login could not be verified and the original login could not be restored.",
+                500,
+              );
+            }
+          }
+          throw cause;
+        }
+
+        applyConfirmedMainCodexCredentialRefresh(target.accountId);
+        const cleanup = await this.cleanupRegisteredStage(ownedStage, "imported");
+        if (!cleanup.removed) {
+          throw new NativeProfileError(
+            "STAGING_CLEANUP_REQUIRED",
+            "The native login was refreshed, but its staging session could not be securely removed.",
+            500,
+            false,
+            undefined,
+            cleanup.plaintextMayRemain,
+          );
+        }
+        return { refreshed: true, effectiveCodexHome: this.context.codexHome };
+      } finally {
+        target?.raw.fill(0);
+        current?.raw.fill(0);
+        key?.key.fill(0);
+      }
     });
   }
 

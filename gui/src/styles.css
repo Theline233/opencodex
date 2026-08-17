@@ -1715,6 +1715,25 @@ dialog.modal-overlay::backdrop {
   outline: 2px solid var(--accent-ring);
   outline-offset: 1px;
 }
+
+.main-account-login-code {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+}
+.main-account-login-code code {
+  flex: 1 1 180px;
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: .12em;
+  user-select: all;
+}
 .codex-auth-page-head__feedback {
   min-width: 8rem;
   max-width: 18rem;

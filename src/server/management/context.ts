@@ -3,6 +3,7 @@ import type { NativeProfileApiDeps } from "../../codex/native-profile-api";
 import type { CodexLogGuardProtectionDeps } from "../../codex/log-guard/protection";
 import type { CodexLogGuardMaintenanceDeps } from "../../codex/log-guard/maintenance";
 import type { StartupHealth } from "../../codex/autostart-health";
+import type { NativeMainDeviceLoginController } from "../../codex/native-main-device-login";
 import type { StartupInstallAction } from "../startup-action-control";
 import type { ManagementPrincipal } from "../management-auth";
 import type { CatalogModel } from "../../codex/catalog";
@@ -85,6 +86,8 @@ export interface ManagementApiDeps {
    * state inside their temporary Codex home.
    */
   codexLogGuardMaintenanceDeps?: CodexLogGuardMaintenanceDeps;
+  /** Device-login controller seam for management-boundary tests. */
+  nativeMainDeviceLoginController?: NativeMainDeviceLoginController;
 }
 
 

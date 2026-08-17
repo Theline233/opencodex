@@ -92,6 +92,9 @@ Pool 模式会在主账号和已添加的 Codex 账号之间选择；Direct 只�
   只有当它上面的账号全部耗尽或不可用时才会降到更靠后的顺序。改动顺序会从**下一个未绑定请求**起生效，
   且不会移动已经绑定的 thread。Codex Desktop（主）账号同样参与排序，可以设为 **最后** 留作备用。
   用 `ocx account priority` 设置的非预设值也会保留在卡片上，仍可选择。
+- **登录主账号** 会在隔离的临时环境中启动 Codex CLI 官方设备授权流程，并显示 OpenAI 验证地址与
+  一次性代码。首次从网页登录前，现有身份会先登记到原生账号保险库，以便将其他身份作为加密账号
+  导入并进行事务化切换。同一账号会原子刷新凭证；授权或启用失败时，原登录保持不变。
 - Thread affinity 可避免每个请求都来回切换账号。启用配额自动切换后，长时间运行的 thread 会被
   定期重新评估；当相关 usage 达到阈值，并且存在使用率确实更低的可用账号时，该 thread 可能会
   重新绑定。
@@ -142,6 +145,7 @@ GUI 是代理 JSON 管理 API 之上的轻量客户端。常用 endpoint 包括�
 | `PUT /api/codex-auth/active` · `PUT /api/codex-auth/auto-switch` · `PUT /api/codex-auth/failover` | 选择下一次请求使用的账号并配置账号池路由。 |
 | `GET /api/codex-auth/active` · `PUT /api/codex-auth/accounts/priority` | 读取实际生效的账号（含表示是否固定的 `pinned` 和指明被固定账号的 `pinnedAccountId`），并设置单个账号的选择顺序。 |
 | `POST /api/codex-auth/login` · `GET /api/codex-auth/login-status` | 通过浏览器登录添加池账号。 |
+| `POST /api/native-main-login/start` · `GET /api/native-main-login/status` · `POST /api/native-main-login/cancel` | 启动、查询或取消主账号 Codex CLI 设备登录。一次性代码只返回给已认证的仪表盘 session，不会持久化。 |
 | `GET /api/logs?tail=50&limit=20&offset=0&provider=...&status=5xx` | 使用 tail、provider、精确状态码或状态类别筛选近期请求元数据。`limit`/`offset` 从最新一行向前分页（`offset=0` 为最新一页）。响应为 `{ timeZone, total, logs }`，其中 `total` 为分页前的匹配行数。 |
 | `GET` / `PUT /api/subagent-models` | 读取或设置五个置顶的 `spawn_agent` override 模型。 |
 | `POST /api/stop` | 停止代理/服务，恢复原生 Codex 并退出。 |

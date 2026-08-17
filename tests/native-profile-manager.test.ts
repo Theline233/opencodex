@@ -1393,6 +1393,37 @@ describe("native main profile transactions", () => {
     expectZeroized(captured[0].raw);
   });
 
+  test("refreshActiveFromStage atomically replaces credentials for the active identity", async () => {
+    const f = fixture();
+    const manager = new NativeProfileManager(f.options);
+    const registered = await manager.register("personal");
+    const stage = await manager.prepareStage();
+    const refreshed = envelope("account-source", "refreshed");
+    writeFileSync(join(stage.stagingCodexHome, "auth.json"), refreshed);
+
+    const result = await manager.refreshActiveFromStage(stage.stageId, stage.writerToken);
+
+    expect(result.refreshed).toBe(true);
+    expect(readFileSync(manager.context.authPath, "utf8")).toBe(refreshed);
+    expect(existsSync(stage.stagingCodexHome)).toBe(false);
+    expect((await manager.list()).activeProfileId).toBe(registered.profile.id);
+  });
+
+  test("refreshActiveFromStage leaves a different identity staged for import and switch", async () => {
+    const f = fixture();
+    const manager = new NativeProfileManager(f.options);
+    await manager.register("personal");
+    const stage = await manager.prepareStage();
+    writeFileSync(join(stage.stagingCodexHome, "auth.json"), f.target);
+
+    const result = await manager.refreshActiveFromStage(stage.stageId, stage.writerToken);
+
+    expect(result.refreshed).toBe(false);
+    expect(readFileSync(manager.context.authPath, "utf8")).toBe(f.source);
+    expect(existsSync(stage.stagingCodexHome)).toBe(true);
+    await manager.cancelStage(stage.stageId, stage.writerToken);
+  });
+
   test("non-file Codex credential stores fail before vault or auth mutation", async () => {
     const f = fixture();
     writeFileSync(join(f.codexHome, "config.toml"), 'cli_auth_credentials_store = "auto"\n');

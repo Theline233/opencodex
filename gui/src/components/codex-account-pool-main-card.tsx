@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { IconLock, IconPause, IconPlay, IconPlus, IconRefresh, IconTicket } from "../icons";
+import { IconKey, IconLock, IconPause, IconPlay, IconPlus, IconRefresh, IconTicket } from "../icons";
 import AccountPriorityControl, { AccountPriorityBadge } from "./AccountPriorityControl";
 import QuotaBars from "./QuotaBars";
 import { CodexPauseToggleLabel, CodexTicketBadge } from "./codex-account-pool-helpers";
@@ -35,6 +35,7 @@ export function CodexAccountPoolMainCard({
   switchingId,
   pinnedId = null,
   onOpenReset,
+  onMainLogin,
   onCopyDoctor,
   doctorCopyOutcomeFor,
 }: {
@@ -59,6 +60,7 @@ export function CodexAccountPoolMainCard({
    */
   pinnedId?: string | null;
   onOpenReset: (account: CodexAccountEntry) => void;
+  onMainLogin: () => void;
   onCopyDoctor?: (accountId: string) => void;
   doctorCopyOutcomeFor?: (accountId: string) => "copied" | "unavailable" | null;
 }) {
@@ -137,7 +139,14 @@ export function CodexAccountPoolMainCard({
             />
           </button>
         )}
-        <span className="card-right"><IconLock width={14} /> {t("codexAuth.appLogin")}</span>
+        <button
+          type="button"
+          className={`btn btn-sm ${showReauth ? "btn-primary" : "btn-ghost"} codex-auth-action-btn card-right`}
+          onClick={onMainLogin}
+          title={t("codexAuth.mainLoginButton")}
+        >
+          <IconKey width={14} /> {t("codexAuth.mainLoginButton")}
+        </button>
       </div>
       <div className="codex-account-identity">
         <div className="codex-account-identity-copy">{main?.email || t("codexAuth.appLogin")}{main?.plan ? ` · ${main.plan}` : ""}</div>

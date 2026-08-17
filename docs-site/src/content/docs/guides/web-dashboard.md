@@ -120,6 +120,11 @@ and other providers.
   thread that is already bound. The Codex Desktop (main) account is ordered like any other, so it can
   be set to **Last** and kept as the reserve. An order set from `ocx account priority` outside those
   five presets stays visible and selectable on the card.
+- **Log in to main account** starts the official Codex CLI device-authorization flow in an isolated
+  staging home and shows the OpenAI verification URL plus one-time code. Before the first web login,
+  the existing identity is registered in the native-profile vault so a different identity can be
+  imported and switched transactionally. OpenCodex atomically refreshes the same identity, and keeps
+  the original login unchanged if authorization or activation fails.
 - Thread affinity prevents per-request flapping. With quota auto-switch enabled, a long-running
   thread is periodically re-evaluated and may rebind after its relevant usage reaches the threshold
   and a strictly lower-usage eligible account exists.
@@ -211,6 +216,7 @@ The GUI is a thin client over the proxy's JSON management API. Useful endpoints 
 | `PUT /api/codex-auth/active` · `PUT /api/codex-auth/auto-switch` · `PUT /api/codex-auth/failover` | Select the account for the next request and configure pool routing. |
 | `GET /api/codex-auth/active` · `PUT /api/codex-auth/accounts/priority` | Read the effective account (including `pinned` and which account is `pinnedAccountId`) and set one account's selection order. |
 | `POST /api/codex-auth/login` · `GET /api/codex-auth/login-status` | Add a pool account through browser login. |
+| `POST /api/native-main-login/start` · `GET /api/native-main-login/status` · `POST /api/native-main-login/cancel` | Start, monitor, or cancel the main-account Codex CLI device login. The one-time code is returned only to the authenticated dashboard session and is never persisted. |
 | `GET /api/logs?tail=50&limit=20&offset=0&provider=...&status=5xx` | Read recent request metadata with optional tail, provider, and exact/class status filters. With `limit`/`offset`, paging walks backward from the newest row (`offset=0` returns the latest page). Response shape: `{ timeZone, total, logs }` where `total` is the filtered row count before pagination. |
 | `GET` / `PUT /api/subagent-models` | Read or set the five featured `spawn_agent` override models. |
 | `POST /api/stop` | Stop the proxy/service, restore native Codex, and exit. |

@@ -284,7 +284,8 @@ test("account reloads do not refetch the independently polled usage summary", as
   await act(async () => { await seen.current!.load(); });
 
   expect(calls.filter(call => call.startsWith("GET usage?")).length).toBe(1);
-  expect(calls.filter(call => call.includes("codex-auth/accounts")).length).toBe(2);
+  expect(calls.filter(call => call === "GET codex-auth/accounts").length).toBe(2);
+  expect(calls.filter(call => call === "GET codex-auth/accounts/usage").length).toBe(2);
 });
 
 test("an inert controller issues no requests at all", async () => {

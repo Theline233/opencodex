@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { saveConfig } from "../src/config";
 import type { NativeProfileManager } from "../src/codex/native-profile-manager";
+import type { NativeMainDeviceLoginController } from "../src/codex/native-main-device-login";
 import { startServer } from "../src/server";
 import { initializeManagementAuthState, issueGuiSession, type ManagementAuthState } from "../src/server/management-auth";
 import type { OcxConfig } from "../src/types";
@@ -33,6 +34,9 @@ const operations: readonly NativeOperation[] = [
   { name: "stage cancel", path: "/api/native-main-profiles/stage/cancel", method: "POST", body: { stageId: "stage-1", writerToken: "writer-token" } },
   { name: "switch", path: "/api/native-main-profiles/switch", method: "POST", body: { target: "profile-1", confirmedStopped: true } },
   { name: "recover", path: "/api/native-main-profiles/recover", method: "POST", body: { rollback: true, confirmedStopped: true } },
+  { name: "main login start", path: "/api/native-main-login/start", method: "POST", body: {} },
+  { name: "main login status", path: "/api/native-main-login/status?flowId=flow-1", method: "GET" },
+  { name: "main login cancel", path: "/api/native-main-login/cancel", method: "POST", body: { flowId: "flow-1" } },
 ];
 
 function loopbackConfig(): OcxConfig {
@@ -68,6 +72,15 @@ function testManager(calls: string[]): NativeProfileManager {
   } as unknown as NativeProfileManager;
 }
 
+function testDeviceController(calls: string[]): NativeMainDeviceLoginController {
+  const state = { flowId: "flow-1", status: "waiting" as const, expiresAt: Date.now() + 60_000 };
+  return {
+    start: async () => { calls.push("main login start"); return state; },
+    status: () => { calls.push("main login status"); return state; },
+    cancel: async () => { calls.push("main login cancel"); return { ok: true as const }; },
+  } as unknown as NativeMainDeviceLoginController;
+}
+
 beforeEach(() => {
   testHome = mkdtempSync(join(tmpdir(), "ocx-native-profile-route-security-"));
   process.env.HOME = testHome;
@@ -97,7 +110,10 @@ describe("native-main profile routes at the management admission boundary", () =
     const config = loopbackConfig();
     saveConfig(config);
     const calls: string[] = [];
-    const server = startServer(0, { managementApi: { nativeProfileApi: { manager: testManager(calls) } } });
+    const server = startServer(0, { managementApi: {
+      nativeProfileApi: { manager: testManager(calls) },
+      nativeMainDeviceLoginController: testDeviceController(calls),
+    } });
     try {
       for (const operation of operations) {
         const request = (headers: HeadersInit = {}) => fetch(new URL(operation.path, server.url), {
@@ -130,7 +146,10 @@ describe("native-main profile routes at the management admission boundary", () =
     const managementAuth: ManagementAuthState = initializeManagementAuthState(config);
     const server = startServer(0, {
       managementAuthState: managementAuth,
-      managementApi: { nativeProfileApi: { manager: testManager(calls) } },
+      managementApi: {
+        nativeProfileApi: { manager: testManager(calls) },
+        nativeMainDeviceLoginController: testDeviceController(calls),
+      },
     });
     try {
       const session = issueGuiSession(new Request(new URL("/", server.url), {
