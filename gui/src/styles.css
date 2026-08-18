@@ -1328,11 +1328,7 @@ dialog.modal-overlay::backdrop {
 .card-head strong { min-width: 0; overflow-wrap: anywhere; }
 .card-sub { font-size: var(--text-label); line-height: var(--leading-body); color: var(--muted); padding: 0 16px 8px; min-width: 0; overflow-wrap: anywhere; }
 .codex-account-capacity {
-  margin: 0 16px 8px;
-  padding: 7px 12px;
   border: 0;
-  border-radius: var(--radius-pill);
-  background: var(--green-soft);
   box-shadow: none;
   color: var(--muted);
 }
@@ -1340,7 +1336,13 @@ dialog.modal-overlay::backdrop {
   color: var(--green);
   font-weight: var(--weight-semibold);
 }
-.codex-account-capacity > strong { color: var(--green); }
+.codex-account-capacity > strong {
+  color: var(--green);
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--green-soft);
+}
 .codex-subscription-status {
   display: flex;
   align-items: center;
