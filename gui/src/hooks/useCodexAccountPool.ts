@@ -58,6 +58,22 @@ export interface CodexAccountEntry {
     totalTokens: number;
     estimatedCostUsd: number;
   };
+  /** Current upstream seven-day cycle, independently estimated for this account. */
+  weeklyCapacity?: {
+    cycleStartAt: number;
+    resetAt: number;
+    usedPercent: number;
+    requests: number;
+    pricedRequests: number;
+    unpricedRequests: number;
+    unmeteredRequests: number;
+    totalTokens: number;
+    observedCostUsd: number;
+    priceCoverageRatio: number;
+    estimatedTotalCostUsd?: number;
+    estimatedRemainingCostUsd?: number;
+    confidence: "collecting" | "low" | "medium" | "high";
+  };
   usageHistoryTruncated?: true;
   needsReauth?: boolean;
   health?: { status: "healthy" | "cooldown" | "reauth_required" | "warning"; reason?: string; until?: string };
@@ -85,7 +101,11 @@ export interface CodexSubscriptionBulkRefreshSummary {
 
 type CodexAccountUsageResponse = {
   historyTruncated?: boolean;
-  accounts?: Array<{ id?: string; usage7d?: CodexAccountEntry["usage7d"] }>;
+  accounts?: Array<{
+    id?: string;
+    usage7d?: CodexAccountEntry["usage7d"];
+    weeklyCapacity?: CodexAccountEntry["weeklyCapacity"];
+  }>;
 };
 
 /**
@@ -221,12 +241,13 @@ export function useCodexAccountPool(apiBase: string, enabled = true): CodexAccou
   // Its own gate, deliberately not the pause one: re-ordering one account and pausing
   // another are independent writes, and a shared ref would make either reject the other.
   const priorityMutationRef = useRef<{ accountId: string } | null>(null);
-  const usageByIdRef = useRef<Map<string, Pick<CodexAccountEntry, "usage7d" | "usageHistoryTruncated">> | null>(null);
+  const usageByIdRef = useRef<Map<string, Pick<CodexAccountEntry, "usage7d" | "weeklyCapacity" | "usageHistoryTruncated">> | null>(null);
   if (usageByIdRef.current === null) {
     usageByIdRef.current = new Map((seed?.accounts ?? []).flatMap(account => (
       account.usage7d
         ? [[account.id, {
           usage7d: account.usage7d,
+          ...(account.weeklyCapacity ? { weeklyCapacity: account.weeklyCapacity } : {}),
           ...(account.usageHistoryTruncated ? { usageHistoryTruncated: true as const } : {}),
         }] as const]
         : []
@@ -302,11 +323,12 @@ export function useCodexAccountPool(apiBase: string, enabled = true): CodexAccou
             if (usageResponse.ok) {
               const usage = await usageResponse.json() as CodexAccountUsageResponse;
               if (loadGenerationRef.current !== generation || !nextAccounts) return true;
-              const nextUsage = new Map<string, Pick<CodexAccountEntry, "usage7d" | "usageHistoryTruncated">>();
+              const nextUsage = new Map<string, Pick<CodexAccountEntry, "usage7d" | "weeklyCapacity" | "usageHistoryTruncated">>();
               for (const row of usage.accounts ?? []) {
                 if (typeof row.id !== "string" || !row.usage7d) continue;
                 nextUsage.set(row.id, {
                   usage7d: row.usage7d,
+                  ...(row.weeklyCapacity ? { weeklyCapacity: row.weeklyCapacity } : {}),
                   ...(usage.historyTruncated ? { usageHistoryTruncated: true as const } : {}),
                 });
               }

@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { rollupCodexAccountUsage7d } from "../src/codex/account-usage";
+import {
+  estimateCodexAccountWeeklyCapacities,
+  rollupCodexAccountUsage7d,
+} from "../src/codex/account-usage";
 import type { PersistedUsageEntry } from "../src/usage/log";
 
 const NOW = Date.UTC(2026, 7, 13, 12, 0, 0);
@@ -86,5 +89,60 @@ describe("rollupCodexAccountUsage7d", () => {
       row({ provider: "openai", accountLogLabel: "main" }),
     ], { ...config, codexAccountMode: "direct" }, NOW);
     expect(result.byAccountId.get("__main__")?.requests).toBe(1);
+  });
+});
+
+describe("estimateCodexAccountWeeklyCapacities", () => {
+  test("uses each account's own reset cycle and estimates API-equivalent total independently", () => {
+    const resetA = NOW + 2 * 24 * 60 * 60 * 1000;
+    const resetB = NOW + 5 * 24 * 60 * 60 * 1000;
+    const cycleStartA = resetA - 7 * 24 * 60 * 60 * 1000;
+    const result = estimateCodexAccountWeeklyCapacities([
+      row({ accountLogLabel: "p111111", timestamp: cycleStartA - 1 }),
+      row({ accountLogLabel: "p111111", timestamp: cycleStartA + 1 }),
+      row({ accountLogLabel: "p222222", timestamp: NOW - 1000 }),
+    ], config, new Map([
+      ["pool-a", { weeklyPercent: 20, weeklyResetAt: resetA / 1000 }],
+      ["pool-b", { weeklyPercent: 40, weeklyResetAt: resetB / 1000 }],
+    ]), false, NOW);
+
+    const accountA = result.byAccountId.get("pool-a")!;
+    const accountB = result.byAccountId.get("pool-b")!;
+    expect(accountA.requests).toBe(1);
+    expect(accountB.requests).toBe(1);
+    expect(accountA.cycleStartAt).toBe(cycleStartA);
+    expect(accountA.estimatedTotalCostUsd).toBeCloseTo(accountA.observedCostUsd / 0.2, 12);
+    expect(accountB.estimatedTotalCostUsd).toBeCloseTo(accountB.observedCostUsd / 0.4, 12);
+    expect(accountA.estimatedRemainingCostUsd).toBeCloseTo(accountA.estimatedTotalCostUsd! - accountA.observedCostUsd, 12);
+    expect(accountA.confidence).toBe("medium");
+  });
+
+  test("collects until five percent and lowers confidence for incomplete pricing coverage", () => {
+    const resetAt = NOW + 4 * 24 * 60 * 60 * 1000;
+    const collecting = estimateCodexAccountWeeklyCapacities([
+      row({ accountLogLabel: "p111111" }),
+    ], config, new Map([
+      ["pool-a", { weeklyPercent: 4.99, weeklyResetAt: resetAt / 1000 }],
+    ]), false, NOW).byAccountId.get("pool-a")!;
+    expect(collecting.confidence).toBe("collecting");
+    expect(collecting.estimatedTotalCostUsd).toBeUndefined();
+
+    const incomplete = estimateCodexAccountWeeklyCapacities([
+      row({ accountLogLabel: "p111111" }),
+      row({ accountLogLabel: "p111111", model: "unknown-price" }),
+    ], config, new Map([
+      ["pool-a", { weeklyPercent: 35, weeklyResetAt: resetAt / 1000 }],
+    ]), false, NOW).byAccountId.get("pool-a")!;
+    expect(incomplete.priceCoverageRatio).toBe(0.5);
+    expect(incomplete.confidence).toBe("low");
+    expect(incomplete.estimatedTotalCostUsd).toBeGreaterThan(incomplete.observedCostUsd);
+  });
+
+  test("ignores stale, missing, and non-weekly quota snapshots", () => {
+    const result = estimateCodexAccountWeeklyCapacities([], config, new Map([
+      ["pool-a", { weeklyPercent: 20, weeklyResetAt: (NOW - 1) / 1000 }],
+      ["pool-b", { weeklyPercent: undefined, weeklyResetAt: (NOW + 1000) / 1000 }],
+    ]), false, NOW);
+    expect(result.byAccountId.size).toBe(0);
   });
 });

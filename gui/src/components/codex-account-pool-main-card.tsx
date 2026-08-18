@@ -77,6 +77,7 @@ export function CodexAccountPoolMainCard({
     quota: main?.quota ?? null,
     subscription: main?.subscription ?? null,
     ...(main?.usage7d ? { usage7d: main.usage7d } : {}),
+    ...(main?.weeklyCapacity ? { weeklyCapacity: main.weeklyCapacity } : {}),
     ...(main?.usageHistoryTruncated ? { usageHistoryTruncated: true as const } : {}),
   };
   const showReauth = Boolean(main?.needsReauth) || oauthHealthShowsReauth(main?.health?.status);

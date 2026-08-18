@@ -12,6 +12,23 @@ plus `openai-apikey/<model>` for the configured API key. Pool includes main plus
 Direct uses only the caller/main bearer. The routes do not fall back to one another. Shipped v1
 configs migrate to marker 2 and preserve `config.json.pre-openai-tiers-v2.bak` for manual restore.
 
+### Per-account seven-day capacity estimate
+
+The Codex account cards keep usage separate for every Pool account. When OpenAI reports a current
+seven-day percentage and reset timestamp, opencodex sums only that account's traffic from
+`resetAt - 7 days` through now and converts its measured tokens to an API list-price equivalent.
+At 5% usage or higher, the card estimates the full-cycle and remaining equivalents with:
+
+```text
+estimated cycle capacity = observed API-equivalent cost / (used percent / 100)
+```
+
+This is an empirical capacity estimate, not a ChatGPT bill or a quota value returned by OpenAI.
+Requests that bypass this opencodex instance are included in OpenAI's percentage but absent from the
+local cost numerator, so they make the estimate too low. The card reports low, medium, or high
+confidence from the used percentage, pricing coverage, and retained-history coverage; below 5% it
+collects data without presenting a total.
+
 ## Config injection
 
 `ocx init`, `ocx start`, and `ocx sync` call the injector. On the default loopback bind, it keeps

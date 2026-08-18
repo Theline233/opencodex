@@ -6,7 +6,12 @@ import {
   withConfigMutationLockSync,
 } from "../config";
 import { codexAccountLogLabel, withCodexAccountLogLabel } from "./account-label";
-import { rollupCodexAccountUsage7d, type CodexAccountUsage7d } from "./account-usage";
+import {
+  estimateCodexAccountWeeklyCapacities,
+  rollupCodexAccountUsage7d,
+  type CodexAccountUsage7d,
+  type CodexAccountWeeklyCapacityEstimate,
+} from "./account-usage";
 import {
   getCodexAccountCredential,
   getValidCodexToken,
@@ -1317,6 +1322,7 @@ export interface CodexAuthAccountsSnapshot {
 
 type CodexUsageCardSnapshot = {
   byAccountId: Record<string, CodexAccountUsage7d>;
+  weeklyCapacityByAccountId: Record<string, CodexAccountWeeklyCapacityEstimate>;
   since: number;
   generatedAt: number;
   historyTruncated: boolean;
@@ -1348,10 +1354,16 @@ function usageLogWasOnlyAppended(
 async function readCodexUsageCardSnapshot(config: OcxConfig): Promise<CodexUsageCardSnapshot> {
   const maxReadBytes = config.managementUsageMaxReadBytes ?? 64 * 1024 * 1024;
   const now = Date.now();
+  const accountIds = [
+    MAIN_CODEX_ACCOUNT_ID,
+    ...(config.codexAccounts ?? []).filter(isSelectableCodexPoolAccount).map(account => account.id),
+  ];
+  const quotaByAccountId = new Map(accountIds.map(accountId => [accountId, getAccountQuota(accountId)]));
   const configKey = JSON.stringify([
     providerCodexAccountMode(OPENAI_CODEX_PROVIDER_ID, config.providers[OPENAI_CODEX_PROVIDER_ID]),
     (config.codexAccounts ?? []).map(account => [account.id, account.isMain, account.logLabel]),
     Object.entries(config.codexAccountNamespaces ?? {}),
+    [...quotaByAccountId].map(([accountId, quota]) => [accountId, quota?.weeklyPercent, quota?.weeklyResetAt]),
   ]);
   const observed = currentUsageLogRevision();
   const cached = codexUsageCardCache;
@@ -1372,8 +1384,22 @@ async function readCodexUsageCardSnapshot(config: OcxConfig): Promise<CodexUsage
     ),
   }, now);
   const historyTruncated = source.truncatedPrefixBytes > 0 || source.entriesTruncated;
+  const weeklyCapacity = estimateCodexAccountWeeklyCapacities(
+    source.entries,
+    {
+      ...config,
+      codexAccountMode: providerCodexAccountMode(
+        OPENAI_CODEX_PROVIDER_ID,
+        config.providers[OPENAI_CODEX_PROVIDER_ID],
+      ),
+    },
+    quotaByAccountId,
+    historyTruncated,
+    now,
+  );
   const snapshot: CodexUsageCardSnapshot = {
     byAccountId: Object.fromEntries(rolled.byAccountId),
+    weeklyCapacityByAccountId: Object.fromEntries(weeklyCapacity.byAccountId),
     since: rolled.since,
     generatedAt: rolled.generatedAt,
     historyTruncated,
@@ -1397,7 +1423,11 @@ export async function listCodexAccountUsage7d(config: OcxConfig): Promise<{
   since: number;
   generatedAt: number;
   historyTruncated: boolean;
-  accounts: Array<{ id: string; usage7d: CodexAccountUsage7d }>;
+  accounts: Array<{
+    id: string;
+    usage7d: CodexAccountUsage7d;
+    weeklyCapacity?: CodexAccountWeeklyCapacityEstimate;
+  }>;
 }> {
   const runtimeConfig = getRuntimeConfig(config);
   const snapshot = await readCodexUsageCardSnapshot(runtimeConfig);
@@ -1412,7 +1442,8 @@ export async function listCodexAccountUsage7d(config: OcxConfig): Promise<{
     historyTruncated: snapshot.historyTruncated,
     accounts: ids.flatMap(id => {
       const usage7d = snapshot.byAccountId[id];
-      return usage7d ? [{ id, usage7d }] : [];
+      const weeklyCapacity = snapshot.weeklyCapacityByAccountId[id];
+      return usage7d ? [{ id, usage7d, ...(weeklyCapacity ? { weeklyCapacity } : {}) }] : [];
     }),
   };
 }

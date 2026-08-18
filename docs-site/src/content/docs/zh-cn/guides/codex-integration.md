@@ -12,6 +12,20 @@ proxy 提供一条裸 `openai` Codex 登录路由，支持 Pool（默认）和 D
 主 bearer。这些路由之间不会互相 fallback。已发布的 v1 config 会迁移到 marker 2，并保留
 `config.json.pre-openai-tiers-v2.bak` 供手动恢复。
 
+### 每账号七天周期容量估算
+
+Codex 账号卡会为 Pool 中的每个账号独立统计。当 OpenAI 返回当前七天窗口的使用百分比和重置时间时，
+opencodex 只汇总该账号从 `resetAt - 7 天` 到现在所承载的流量，并按 API 标价换算其 Token。使用量达到
+5% 后，账号卡按以下公式估算完整周期总额和剩余额：
+
+```text
+周期总额估算 = 已观测 API 标价等价值 /（已用百分比 / 100）
+```
+
+这是经验容量估算，不是 ChatGPT 实际账单，也不是 OpenAI 接口返回的额度。绕过本 opencodex 实例的
+请求会进入 OpenAI 百分比，却不会进入本地美元分子，因此会让估算偏低。账号卡根据已用百分比、估价
+覆盖率和历史完整性显示低、中、高可信度；低于 5% 时只采集数据，不显示总额。
+
 ## Config 注入
 
 `ocx init`、`ocx start` 和 `ocx sync` 都会调用注入器。在默认的 loopback 绑定下，它会保留
