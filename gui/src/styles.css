@@ -1329,18 +1329,18 @@ dialog.modal-overlay::backdrop {
 .card-sub { font-size: var(--text-label); line-height: var(--leading-body); color: var(--muted); padding: 0 16px 8px; min-width: 0; overflow-wrap: anywhere; }
 .codex-account-capacity {
   margin: 0 16px 8px;
-  padding: 9px 11px;
-  border: 1px solid color-mix(in srgb, var(--green) 42%, var(--border));
-  border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--green-soft) 72%, var(--surface));
-  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--green) 82%, transparent);
+  padding: 7px 12px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--green-soft);
+  box-shadow: none;
   color: var(--muted);
 }
 .codex-account-capacity > span:first-child {
   color: var(--green);
   font-weight: var(--weight-semibold);
 }
-.codex-account-capacity > strong { color: var(--text); }
+.codex-account-capacity > strong { color: var(--green); }
 .codex-subscription-status {
   display: flex;
   align-items: center;
