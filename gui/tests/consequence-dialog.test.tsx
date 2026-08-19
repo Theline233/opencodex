@@ -3,6 +3,7 @@ import { Window } from "happy-dom";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { LanguageProvider } from "../src/i18n/provider";
+import { ensureLocaleLoaded } from "../src/i18n/catalogs";
 import ConsequenceDialog, { type ConsequenceCopy } from "../src/pages/integrations/ConsequenceDialog";
 
 const globals = ["document", "window", "navigator", "localStorage", "IS_REACT_ACT_ENVIRONMENT"] as const;
@@ -46,6 +47,7 @@ afterEach(async () => {
 });
 
 async function mount(options: { path?: string; onClose?: () => void; onConfirm?: () => void | Promise<void> } = {}) {
+  await ensureLocaleLoaded("ko");
   const path = options.path ?? "/live/home/.grok/config.toml";
   await act(async () => {
     root = createRoot(container);

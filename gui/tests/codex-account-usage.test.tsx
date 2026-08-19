@@ -4,6 +4,7 @@ import { act } from "react";
 import type { Root } from "react-dom/client";
 import { CodexAccountUsage7d } from "../src/components/codex-account-usage";
 import { LanguageProvider } from "../src/i18n/provider";
+import { ensureLocaleLoaded } from "../src/i18n/catalogs";
 
 const globals = ["document", "window", "navigator", "localStorage", "IS_REACT_ACT_ENVIRONMENT"] as const;
 let previous: Record<(typeof globals)[number], unknown>;
@@ -34,6 +35,7 @@ afterEach(async () => {
 });
 
 test("account card labels the seven-day cost as an API list-price equivalent and exposes gaps", async () => {
+  await ensureLocaleLoaded("zh");
   const { createRoot } = await import("react-dom/client");
   await act(async () => {
     root = createRoot(host);

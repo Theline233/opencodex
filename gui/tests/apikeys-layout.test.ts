@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { DICTS, type Locale } from "../src/i18n/shared";
+import { DICTS, ensureLocaleLoaded, type Locale } from "../src/i18n/shared";
 
 async function apiKeysSources(): Promise<string> {
   const page = await Bun.file(new URL("../src/pages/ApiKeys.tsx", import.meta.url)).text();
@@ -106,7 +106,7 @@ test("ApiKeys workspace keeps endpoint, generate, models, and usage panels", asy
   expect(page).toContain('from "../api-access-models"');
 });
 
-test("every locale has exactly the English api namespace", () => {
+test("every locale has exactly the English api namespace", async () => {
   // The previous version of this test named eight literals out of a surface
   // that had seventy-four. It passed while five locales were missing the same
   // key. Compare the loaded dictionaries instead: this catches missing AND
@@ -117,6 +117,7 @@ test("every locale has exactly the English api namespace", () => {
   // Activation guard: swapping the extraction back to a curated subset fails.
   expect(englishApiKeys.length).toBeGreaterThan(8);
   for (const locale of locales) {
+    await ensureLocaleLoaded(locale);
     const localeApiKeys = Object.keys(DICTS[locale]).filter(key => key.startsWith("api.")).sort();
     expect(localeApiKeys).toEqual(englishApiKeys);
   }

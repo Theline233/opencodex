@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { DICTS, type Locale } from "../src/i18n/catalogs";
+import { DICTS, ensureLocaleLoaded, type Locale } from "../src/i18n/catalogs";
 import { LAB_CATALOG_OVERRIDES, labSupplement } from "../src/i18n/lab-translations";
 
 const NON_ENGLISH: Locale[] = ["de", "fr", "ja", "ko", "ru", "tr", "zh"];
@@ -13,8 +13,9 @@ test("Compatibility Lab catalog overrides cover the translated overlay namespace
   }
 });
 
-test("Compatibility Lab ships localized core copy for every non-English locale", () => {
+test("Compatibility Lab ships localized core copy for every non-English locale", async () => {
   for (const locale of NON_ENGLISH) {
+    await ensureLocaleLoaded(locale);
     expect(DICTS[locale]["lab.title"]).not.toBe(DICTS.en["lab.title"]);
     expect(DICTS[locale]["lab.loadMore"]).not.toBe(DICTS.en["lab.loadMore"]);
     expect(DICTS[locale]["lab.detailClose"]).not.toBe(DICTS.en["lab.detailClose"]);

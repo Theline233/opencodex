@@ -682,7 +682,7 @@ test("a loopback-only refusal is localized, not the server's English message", a
    */
   const { describeRefusal } = await import("../src/pages/integrations/refusal-copy");
   const { IntegrationApiError } = await import("../src/pages/integrations/integration-api");
-  const { DICTS } = await import("../src/i18n/shared");
+  const { DICTS, ensureLocaleLoaded } = await import("../src/i18n/shared");
 
   const serverEnglish = "kimi has nowhere to put the admission header a non-loopback bind requires";
   const refusal = new IntegrationApiError(500, {
@@ -695,6 +695,7 @@ test("a loopback-only refusal is localized, not the server's English message", a
   });
 
   for (const locale of ["ko", "ja", "de", "zh", "ru"] as const) {
+    await ensureLocaleLoaded(locale);
     const dict = DICTS[locale];
     const t = ((key: string, vars?: Record<string, string>) => {
       let text = (dict as Record<string, string>)[key] ?? key;

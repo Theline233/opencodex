@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { Window } from "happy-dom";
 import { promptForAdminToken } from "../src/admin-token-dialog";
 import { setActiveLocale } from "../src/i18n/shared";
+import { ensureLocaleLoaded } from "../src/i18n/catalogs";
 
 const globals = ["document", "window", "navigator", "localStorage", "HTMLElement"] as const;
 let previousGlobals: Record<(typeof globals)[number], unknown>;
@@ -112,6 +113,7 @@ test("keeps the dialog open for whitespace and rejected tokens until one is acce
 test("uses the active UI locale instead of re-detecting browser storage", async () => {
   localStorage.setItem("ocx-lang", "en");
   setActiveLocale("ko");
+  await ensureLocaleLoaded("ko");
 
   const pending = promptForAdminToken(async () => "accepted");
   const dialog = document.querySelector<HTMLDialogElement>("#opencodex-admin-token-dialog")!;

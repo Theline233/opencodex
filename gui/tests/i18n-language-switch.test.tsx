@@ -4,6 +4,7 @@ import { act } from "react";
 import type { Root } from "react-dom/client";
 import { LanguageProvider, useI18n } from "../src/i18n";
 import { LOCALES, localeDisplayName } from "../src/i18n/shared";
+import { ensureLocaleLoaded } from "../src/i18n/catalogs";
 import { Select } from "../src/ui";
 
 // lidge-jun's review asked for a rendered language-switch smoke test demonstrating the
@@ -165,6 +166,7 @@ describe("zh-TW language switch on the real GUI surface", () => {
     expect(navLabels()).toContain("Integrations");
 
     await choose(["繁體中文"]);
+    await act(async () => { await ensureLocaleLoaded("zh-TW"); });
 
     expect(navLabels()).toContain("儀表板");
     expect(navLabels()).toContain("供應商");
@@ -183,6 +185,7 @@ describe("zh-TW language switch on the real GUI surface", () => {
     await mountSurface();
     await choose(["繁體中文"]);
     await choose(["中文"]);
+    await act(async () => { await ensureLocaleLoaded("zh"); });
     expect(navLabels()).toContain("仪表盘");
     expect(navLabels()).toContain("子代理");
     expect(localStorage.getItem("ocx-lang")).toBe("zh");
@@ -219,6 +222,7 @@ describe("French language switch on the real GUI surface", () => {
     expect(navLabels()).toContain("Dashboard");
 
     await choose(["Français"]);
+    await act(async () => { await ensureLocaleLoaded("fr"); });
 
     expect(navLabels()).toEqual([
       "Tableau de bord",

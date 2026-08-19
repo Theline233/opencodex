@@ -1,8 +1,8 @@
-import { describe, expect, test } from "bun:test";
+import { beforeAll, describe, expect, test } from "bun:test";
 import { formatResetFuture } from "../src/components/QuotaBars";
 import { formatUptime } from "../src/formatUptime";
 import type { TKey } from "../src/i18n";
-import { DICTS, LOCALES } from "../src/i18n/shared";
+import { DICTS, LOCALES, ensureLocaleLoaded } from "../src/i18n/shared";
 import { labSupplement } from "../src/i18n/lab-translations";
 import { ROUTING_COMPATIBILITY_FIELD_LABELS } from "../src/i18n/routing-compatibility-labels";
 import { visionReasoningLabel } from "../src/i18n/vision-reasoning-labels";
@@ -12,6 +12,10 @@ import { statusCodeInfo } from "../src/status-codes";
 
 const FR_CATALOG_URL = new URL("../src/i18n/fr.ts", import.meta.url);
 const PLACEHOLDER_RE = /\{([a-zA-Z0-9_]+)\}/g;
+
+beforeAll(async () => {
+  await ensureLocaleLoaded("fr");
+});
 
 const INTENTIONAL_ENGLISH = new Set<TKey>([
   // Units, symbols, protocol values, machine labels, and product names.

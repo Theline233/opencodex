@@ -1,7 +1,8 @@
 import { createContext, useContext } from "react";
-import { DICTS, localeDisplayName, type Locale, type TKey } from "./catalogs";
+import { DICTS, ensureLocaleLoaded, getLocaleVersion, isLocaleLoaded, localeDisplayName, subscribeLocaleLoads, type Locale, type TKey } from "./catalogs";
 
 export { DICTS, localeDisplayName, type Locale, type TKey };
+export { ensureLocaleLoaded, isLocaleLoaded, subscribeLocaleLoads, getLocaleVersion };
 
 export const LOCALES: { code: Locale; htmlLang: string }[] = [
   { code: "en", htmlLang: "en" },

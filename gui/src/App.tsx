@@ -1,15 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { useKeyedClientResource } from "./client-resource";
 import Dashboard from "./pages/Dashboard";
-import Providers from "./pages/Providers";
-import Models from "./pages/Models";
-import Subagents from "./pages/Subagents";
-import Logs from "./pages/Logs";
-import Usage from "./pages/Usage";
-import Storage from "./pages/Storage";
-import CodexAuth from "./pages/CodexAuth";
-import Integrations from "./pages/Integrations";
-import Startup from "./pages/Startup";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { SidebarGithubRow } from "./components/sidebar-github-row";
 import { IconGrid, IconServer, IconBoxes, IconBot, IconList, IconActivity, IconHardDrive, IconKey, IconMenu, IconSun, IconMoon, IconMonitor, IconGlobe, IconPower, IconX, IconRefresh} from "./icons";
@@ -23,6 +14,23 @@ import { requestProxyStop } from "./stop-proxy";
 import { useCodexRestart } from "./use-codex-restart";
 
 installApiAuthFetch();
+
+/*
+ * Only Dashboard ships in the entry bundle — it is the default landing page.
+ * Every other page downloads as its own chunk on first visit, which keeps
+ * the first-load JavaScript small on slow links. The JSX expressions below
+ * stay byte-identical to the static-import era so page wiring tests keep
+ * pinning the same render surface.
+ */
+const Startup = lazy(() => import("./pages/Startup"));
+const Providers = lazy(() => import("./pages/Providers"));
+const Models = lazy(() => import("./pages/Models"));
+const Subagents = lazy(() => import("./pages/Subagents"));
+const Logs = lazy(() => import("./pages/Logs"));
+const Usage = lazy(() => import("./pages/Usage"));
+const Storage = lazy(() => import("./pages/Storage"));
+const CodexAuth = lazy(() => import("./pages/CodexAuth"));
+const Integrations = lazy(() => import("./pages/Integrations"));
 
 type Theme = "light" | "dark" | "system";
 
@@ -318,16 +326,25 @@ export default function App() {
             detailsLabel={t("errorBoundary.details")}
             reloadLabel={t("errorBoundary.reload")}
           >
-            {page === "dashboard" && <Dashboard apiBase={API_BASE} />}
-            {page === "startup" && <Startup apiBase={API_BASE} />}
-            {page === "providers" && <Providers apiBase={API_BASE} />}
-            {page === "models" && <Models key={API_BASE} apiBase={API_BASE} restartEpoch={codexRestartEpoch} />}
-            {page === "subagents" && <Subagents key={API_BASE} apiBase={API_BASE} />}
-            {page === "logs" && <Logs apiBase={API_BASE} />}
-            {page === "usage" && <Usage apiBase={API_BASE} />}
-            {page === "storage" && <Storage apiBase={API_BASE} />}
-            {page === "codex-auth" && <CodexAuth apiBase={API_BASE} />}
-            {page === "integrations" && <Integrations apiBase={API_BASE} />}
+            <Suspense
+              fallback={(
+                <div className="page-loading" role="status" aria-live="polite">
+                  <span className="page-loading__spinner" aria-hidden="true" />
+                  {t("common.loading")}
+                </div>
+              )}
+            >
+              {page === "dashboard" && <Dashboard apiBase={API_BASE} />}
+              {page === "startup" && <Startup apiBase={API_BASE} />}
+              {page === "providers" && <Providers apiBase={API_BASE} />}
+              {page === "models" && <Models key={API_BASE} apiBase={API_BASE} restartEpoch={codexRestartEpoch} />}
+              {page === "subagents" && <Subagents key={API_BASE} apiBase={API_BASE} />}
+              {page === "logs" && <Logs apiBase={API_BASE} />}
+              {page === "usage" && <Usage apiBase={API_BASE} />}
+              {page === "storage" && <Storage apiBase={API_BASE} />}
+              {page === "codex-auth" && <CodexAuth apiBase={API_BASE} />}
+              {page === "integrations" && <Integrations apiBase={API_BASE} />}
+            </Suspense>
           </ErrorBoundary>
         </div>
       </main>
