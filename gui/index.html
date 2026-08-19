@@ -19,6 +19,37 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      // Boot placeholder for lazy locale catalogs: main.tsx waits for the active
+      // locale before first paint, so the window before React mounts must not be
+      // blank — and must not flash English. This tiny mirror of the provider's
+      // native loading strings covers that window in the user's own language.
+      (function () {
+        try {
+          var stored = localStorage.getItem("ocx-lang");
+          var nav = (navigator.language || "").toLowerCase();
+          var lang = stored
+            || (/^zh-(tw|hk|mo)|zh-hant/.test(nav) ? "zh-TW"
+              : nav.indexOf("zh") === 0 ? "zh"
+              : nav.slice(0, 2));
+          var text = {
+            zh: "正在加载中文语言包…",
+            "zh-TW": "正在載入繁體中文語言包…",
+            ja: "日本語を読み込み中…",
+            ko: "한국어를 불러오는 중…",
+            de: "Deutsch wird geladen…",
+            fr: "Chargement du français…",
+            ru: "Загрузка русского языка…",
+            tr: "Türkçe yükleniyor…",
+          }[lang];
+          if (text) {
+            document.getElementById("root").innerHTML =
+              '<div style="position:fixed;left:50%;bottom:16px;transform:translateX(-50%);max-width:calc(100vw - 32px);padding:6px 12px;border-radius:999px;background:#fff;border:1px solid #e4e7ec;font:13px/1.5 system-ui,sans-serif;color:#667085">'
+              + text + "</div>";
+          }
+        } catch (e) { /* ignore */ }
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

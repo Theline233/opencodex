@@ -8,7 +8,9 @@ import { useI18n } from "./shared";
  * still downloading. Hardcoded per locale: the catalog for that locale is
  * precisely what has not arrived yet, so it cannot be asked for this text.
  */
-const LOCALE_LOADING_TEXT: Record<Locale, string> = {
+/** Exported so the boot-notice contract test can keep index.html's static
+ *  mirror in sync with this list. */
+export const LOCALE_LOADING_TEXT: Record<Locale, string> = {
   en: "Loading English…",
   de: "Deutsch wird geladen…",
   fr: "Chargement du français…",
