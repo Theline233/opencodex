@@ -3,7 +3,7 @@ import { Window } from "happy-dom";
 import { act } from "react";
 import type { Root } from "react-dom/client";
 import { LanguageProvider, useI18n } from "../src/i18n";
-import { DICTS, __resetLocaleLoadStateForTests, ensureLocaleLoaded, isLocaleLoaded } from "../src/i18n/catalogs";
+import { DICTS, __resetLocaleLoadStateForTests, ensureLocaleLoaded, hasBootCachedLocale, isLocaleLoaded } from "../src/i18n/catalogs";
 
 /**
  * Lazy locale catalogs: only English ships in the entry chunk. This pins the
@@ -65,6 +65,13 @@ test("non-English catalogs populate in place and leave the English fallback inta
   expect(DICTS.en["nav.dashboard"]).toBe("Dashboard");
 });
 
+test("a successful locale fetch records the boot-cache marker for later visits", async () => {
+  expect(hasBootCachedLocale("ja")).toBe(false);
+  await ensureLocaleLoaded("ja");
+  expect(win.localStorage.getItem("ocx-locale-cached:ja")).toBe("1");
+  expect(hasBootCachedLocale("ja")).toBe(true);
+});
+
 test("the provider shows the native loading notice, then flips once the chunk lands", async () => {
   const { createRoot } = await import("react-dom/client");
   act(() => {
@@ -92,4 +99,3 @@ test("the provider shows the native loading notice, then flips once the chunk la
   expect(host.querySelector("[data-nav]")?.textContent).not.toBe("Dashboard");
   expect(host.querySelector("[data-nav]")?.textContent).toContain("ダッシュ");
 });
-

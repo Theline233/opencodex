@@ -71,6 +71,22 @@ export function isLocaleLoaded(locale: Locale): boolean {
   return loadedLocales.has(locale);
 }
 
+/**
+ * Boot-cache marker for one locale. Written once that locale's chunk has been
+ * fetched successfully. On later visits the chunk is almost certainly still in
+ * the browser HTTP cache, so first paint can afford to wait for it instead of
+ * flashing the English fallback. A missing marker (very first visit, or after
+ * clearing site data) means "fetch in the background" instead.
+ */
+export function hasBootCachedLocale(locale: Locale): boolean {
+  try {
+    if (typeof localStorage === "undefined") return false;
+    return localStorage.getItem(`ocx-locale-cached:${locale}`) === "1";
+  } catch {
+    return false;
+  }
+}
+
 /** Load a locale catalog exactly once; safe to call repeatedly or concurrently. */
 export function ensureLocaleLoaded(locale: Locale): Promise<void> {
   if (loadedLocales.has(locale)) return Promise.resolve();
@@ -83,6 +99,11 @@ export function ensureLocaleLoaded(locale: Locale): Promise<void> {
       DICTS[locale] = withLabTranslations(locale, catalog);
       loadedLocales.add(locale);
       localeVersion += 1;
+      try {
+        if (typeof localStorage !== "undefined") {
+          localStorage.setItem(`ocx-locale-cached:${locale}`, "1");
+        }
+      } catch { /* storage may be unavailable; the marker is only an optimization */ }
       for (const notify of subscribers) notify();
     })
     .finally(() => {

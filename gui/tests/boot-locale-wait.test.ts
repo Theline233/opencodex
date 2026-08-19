@@ -9,12 +9,16 @@ import { LOCALE_LOADING_TEXT } from "../src/i18n/provider";
  * locale-lazy-loading.test.tsx.
  */
 
-test("main.tsx waits for the active locale catalog before first paint", async () => {
+test("main.tsx waits for the locale only when a previous session cached it", async () => {
   const main = await Bun.file(new URL("../src/main.tsx", import.meta.url)).text();
   expect(main).toContain("const initialLocale = detectInitial();");
+  const gateAt = main.indexOf("hasBootCachedLocale(initialLocale)");
+  expect(gateAt).toBeGreaterThan(-1);
   const awaitAt = main.indexOf("await ensureLocaleLoaded(initialLocale)");
   expect(awaitAt).toBeGreaterThan(-1);
-  // The wait happens before React mounts, and fails open to the English fallback.
+  // The wait is gated on the marker, happens before React mounts, and fails
+  // open to the English fallback.
+  expect(gateAt).toBeLessThan(awaitAt);
   expect(awaitAt).toBeLessThan(main.indexOf("ReactDOM.createRoot"));
   expect(main).toContain(".catch(");
 });
@@ -27,4 +31,3 @@ test("index.html ships the native boot notice for every non-English locale", asy
     expect(html, locale).toContain(text);
   }
 });
-
