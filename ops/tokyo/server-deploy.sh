@@ -217,6 +217,19 @@ prepare_release() {
   local release_bun="$staging/node_modules/bun/bin/bun.exe"
   [ -x "$release_bun" ] || fail "release Bun runtime was not installed"
   "$release_bun" test "$staging/tests/sse-payload-rewrite.test.ts" "$staging/tests/responses-snapshot-repair.test.ts"
+  # Keep exactly the current and previous production builds' native hashed
+  # assets in the new release. Tabs opened before a deployment can then finish
+  # a later lazy import instead of receiving a 404. The helper records the new
+  # build's native list before copying, so retained files never accumulate.
+  local prior_releases=()
+  local prior_target
+  if [ -L "$current_link" ] && prior_target=$(readlink -f -- "$current_link"); then
+    prior_releases+=("$prior_target")
+  fi
+  if [ -L "$previous_link" ] && prior_target=$(readlink -f -- "$previous_link"); then
+    prior_releases+=("$prior_target")
+  fi
+  "$release_bun" "$staging/ops/tokyo/retain-previous-gui-assets.ts" "$staging" "${prior_releases[@]}"
   assert_release_complete "$staging"
   printf 'release=%s\nsha256=%s\nprepared_at=%s\n' \
     "$release" "$actual_sha" "$(date -Iseconds)" > "$staging/.opencodex-release"

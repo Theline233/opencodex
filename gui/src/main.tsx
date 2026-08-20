@@ -3,7 +3,13 @@ import ReactDOM from "react-dom/client";
 import App from "./App";
 import { LanguageProvider } from "./i18n/provider";
 import { detectInitial, ensureLocaleLoaded, hasBootCachedLocale, isLocaleLoaded } from "./i18n/shared";
+import { installVitePreloadRecovery } from "./preload-recovery";
 import "./styles.css";
+
+// A tab can outlive a production deployment. If it later lazy-loads a route,
+// its old hashed chunk may no longer be the current one; reload once into the
+// new HTML/build instead of surfacing an opaque dynamic-import failure.
+installVitePreloadRecovery({ buildKey: import.meta.url });
 
 // First-visit vs cached-visit boot:
 // - No boot-cache marker: the locale chunk has never been fetched, so waiting
