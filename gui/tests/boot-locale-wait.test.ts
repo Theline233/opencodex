@@ -31,3 +31,12 @@ test("index.html ships the native boot notice for every non-English locale", asy
     expect(html, locale).toContain(text);
   }
 });
+
+test("index.html skips the boot notice when a stored catalog exists", async () => {
+  // Repeat visits seed the locale synchronously from localStorage, so the
+  // static notice must stay silent whenever a catalog entry is already stored.
+  const html = await Bun.file(new URL("../index.html", import.meta.url)).text();
+  expect(html).toContain('key.indexOf("ocx-locale-catalog:") === 0');
+  expect(html).toContain("cached = true");
+  expect(html).toContain("if (text && !cached)");
+});

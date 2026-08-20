@@ -87,6 +87,63 @@ export function hasBootCachedLocale(locale: Locale): boolean {
   }
 }
 
+/**
+ * Full-catalog localStorage mirror. Once a locale has been fetched, its final
+ * dictionary (with the lab overlay applied) is stored under a versioned key so
+ * repeat visits can paint that locale synchronously — no fetch, no English
+ * fallback flash, no loading notice. A new app version uses new keys and the
+ * old entries are swept.
+ */
+const STORAGE_PREFIX = "ocx-locale-catalog:";
+const CATALOG_VERSION = typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "local";
+const STORAGE_PREFIX_VERSIONED = `${STORAGE_PREFIX}${CATALOG_VERSION}:`;
+
+function catalogStorageKey(locale: Locale): string {
+  return `${STORAGE_PREFIX_VERSIONED}${locale}`;
+}
+
+/** Seed already-fetched catalogs back from localStorage. Runs once at module
+ *  load (boot) and is exported for tests. Corrupt or stale-version entries are
+ *  dropped instead of trusted. */
+export function seedStoredLocaleCatalogs(): void {
+  try {
+    if (typeof localStorage === "undefined") return;
+    for (let i = localStorage.length - 1; i >= 0; i -= 1) {
+      const key = localStorage.key(i);
+      if (!key || !key.startsWith(STORAGE_PREFIX)) continue;
+      if (!key.startsWith(STORAGE_PREFIX_VERSIONED)) {
+        localStorage.removeItem(key); // previous app version
+        continue;
+      }
+      const locale = key.slice(STORAGE_PREFIX_VERSIONED.length) as Locale;
+      if (!(locale in CATALOG_LOADERS) || loadedLocales.has(locale)) continue;
+      const raw = localStorage.getItem(key);
+      if (!raw) continue;
+      let catalog: unknown;
+      try {
+        catalog = JSON.parse(raw);
+      } catch {
+        localStorage.removeItem(key);
+        continue;
+      }
+      if (
+        catalog === null
+        || typeof catalog !== "object"
+        || typeof (catalog as Record<string, unknown>)["nav.dashboard"] !== "string"
+      ) {
+        localStorage.removeItem(key);
+        continue;
+      }
+      DICTS[locale] = catalog as Record<TKey, string>;
+      loadedLocales.add(locale);
+    }
+  } catch {
+    /* storage unavailable or corrupted — fall back to the async loader */
+  }
+}
+
+seedStoredLocaleCatalogs();
+
 /** Load a locale catalog exactly once; safe to call repeatedly or concurrently. */
 export function ensureLocaleLoaded(locale: Locale): Promise<void> {
   if (loadedLocales.has(locale)) return Promise.resolve();
@@ -102,6 +159,7 @@ export function ensureLocaleLoaded(locale: Locale): Promise<void> {
       try {
         if (typeof localStorage !== "undefined") {
           localStorage.setItem(`ocx-locale-cached:${locale}`, "1");
+          localStorage.setItem(catalogStorageKey(locale), JSON.stringify(DICTS[locale]));
         }
       } catch { /* storage may be unavailable; the marker is only an optimization */ }
       for (const notify of subscribers) notify();

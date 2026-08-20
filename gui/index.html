@@ -42,7 +42,20 @@
             ru: "Загрузка русского языка…",
             tr: "Türkçe yükleniyor…",
           }[lang];
-          if (text) {
+          // A stored catalog seeds synchronously in the app, so repeat visits
+          // need no notice at all; only show it when the locale still has to
+          // be fetched (first visit or after clearing site data).
+          var cached = false;
+          try {
+            for (var i = 0; i < localStorage.length; i++) {
+              var key = localStorage.key(i) || "";
+              if (key.indexOf("ocx-locale-catalog:") === 0 && key.slice(key.lastIndexOf(":") + 1) === lang) {
+                cached = true;
+                break;
+              }
+            }
+          } catch (e) { /* ignore */ }
+          if (text && !cached) {
             document.getElementById("root").innerHTML =
               '<div style="position:fixed;left:50%;bottom:16px;transform:translateX(-50%);max-width:calc(100vw - 32px);padding:6px 12px;border-radius:999px;background:#fff;border:1px solid #e4e7ec;font:13px/1.5 system-ui,sans-serif;color:#667085">'
               + text + "</div>";

@@ -3,7 +3,7 @@ import { Window } from "happy-dom";
 import { act } from "react";
 import type { Root } from "react-dom/client";
 import { LanguageProvider, useI18n } from "../src/i18n";
-import { DICTS, __resetLocaleLoadStateForTests, ensureLocaleLoaded, hasBootCachedLocale, isLocaleLoaded } from "../src/i18n/catalogs";
+import { DICTS, __resetLocaleLoadStateForTests, ensureLocaleLoaded, hasBootCachedLocale, isLocaleLoaded, seedStoredLocaleCatalogs } from "../src/i18n/catalogs";
 
 /**
  * Lazy locale catalogs: only English ships in the entry chunk. This pins the
@@ -70,6 +70,48 @@ test("a successful locale fetch records the boot-cache marker for later visits",
   await ensureLocaleLoaded("ja");
   expect(win.localStorage.getItem("ocx-locale-cached:ja")).toBe("1");
   expect(hasBootCachedLocale("ja")).toBe(true);
+});
+
+test("a stored catalog seeds synchronously so a cached visit needs no fetch", async () => {
+  await ensureLocaleLoaded("ja");
+  __resetLocaleLoadStateForTests();
+  expect(isLocaleLoaded("ja")).toBe(false);
+
+  seedStoredLocaleCatalogs();
+
+  expect(isLocaleLoaded("ja")).toBe(true);
+  expect(DICTS.ja["nav.dashboard"]).not.toBe(DICTS.en["nav.dashboard"]);
+  expect(DICTS.ja["lang.nativeName"]).toBe("日本語");
+});
+
+test("stale-version or corrupt stored catalogs are dropped instead of seeded", async () => {
+  win.localStorage.setItem("ocx-locale-catalog:old-version:ja", JSON.stringify(DICTS.en));
+  win.localStorage.setItem("ocx-locale-catalog:local:ja", "{not json");
+
+  seedStoredLocaleCatalogs();
+
+  expect(isLocaleLoaded("ja")).toBe(false);
+  expect(win.localStorage.getItem("ocx-locale-catalog:old-version:ja")).toBeNull();
+  expect(win.localStorage.getItem("ocx-locale-catalog:local:ja")).toBeNull();
+});
+
+test("a seeded locale renders immediately without the loading notice", async () => {
+  await ensureLocaleLoaded("ja");
+  __resetLocaleLoadStateForTests();
+  seedStoredLocaleCatalogs();
+
+  const { createRoot } = await import("react-dom/client");
+  act(() => {
+    root = createRoot(host);
+    root.render(
+      <LanguageProvider>
+        <Probe />
+      </LanguageProvider>,
+    );
+  });
+
+  expect(win.document.querySelector(".locale-loading")).toBeNull();
+  expect(host.querySelector("[data-nav]")?.textContent).toContain("ダッシュ");
 });
 
 test("the provider shows the native loading notice, then flips once the chunk lands", async () => {
