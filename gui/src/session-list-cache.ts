@@ -75,3 +75,60 @@ export function clearSessionListCache(key: string): void {
     /* ignore */
   }
 }
+
+/**
+ * localStorage helpers for non-secret GUI summary shapes that are safe to keep
+ * across browser sessions (dashboard SWR seeds). Never store API keys, tokens,
+ * or credentials here — XSS can read localStorage. Entries larger than the cap
+ * are dropped instead of risking the storage quota.
+ */
+const MAX_PERSISTENT_BYTES = 512 * 1024;
+
+export function readPersistentListCache<T>(key: string): T | null {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as unknown;
+    if (isEntryEnvelope(parsed)) return parsed.data as T;
+    return parsed as T;
+  } catch {
+    return null;
+  }
+}
+
+export function readPersistentListCacheEntry<T>(key: string): SessionListEntry<T> | null {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as unknown;
+    if (isEntryEnvelope(parsed)) {
+      return { data: parsed.data as T, cachedAt: parsed[CACHED_AT_KEY] };
+    }
+    return { data: parsed as T, cachedAt: null };
+  } catch {
+    return null;
+  }
+}
+
+export function writePersistentListCache<T>(key: string, data: T): void {
+  try {
+    const raw = JSON.stringify({ [CACHED_AT_KEY]: Date.now(), data });
+    if (raw.length > MAX_PERSISTENT_BYTES) {
+      // Oversized shapes (e.g. a very large model catalog) are never persisted;
+      // drop any previous entry so the key cannot pin a stale smaller shape.
+      try { localStorage.removeItem(key); } catch { /* ignore */ }
+      return;
+    }
+    localStorage.setItem(key, raw);
+  } catch {
+    /* private mode / quota */
+  }
+}
+
+export function clearPersistentListCache(key: string): void {
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    /* ignore */
+  }
+}

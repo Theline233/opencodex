@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useKeyedClientResource } from "../client-resource";
 import { replaceHash } from "../hash-routing";
 import { useI18n } from "../i18n/shared";
-import { readSessionListCache, writeSessionListCache } from "../session-list-cache";
+import { readPersistentListCache, writePersistentListCache } from "../session-list-cache";
 import {
   PROJECT_CONFIG_DIAGNOSTICS_POLL_MS,
   STARTUP_HEALTH_STALE_RETRY_MS,
@@ -56,6 +56,7 @@ const OVERVIEW_CACHE_PREFIX = "ocx.dash.overview.v1:";
 const USAGE_CACHE_PREFIX = "ocx.dash.usage30d.v1:";
 const STARTUP_CACHE_PREFIX = "ocx.dash.startup.v1:";
 const MA_MODE_CACHE_PREFIX = "ocx.dash.maMode.v1:";
+const MODELS_CACHE_PREFIX = "ocx.dash.models.v1:";
 
 type CachedControls = {
   settings?: SettingsData | null;
@@ -91,29 +92,33 @@ export function useDashboardData(apiBase: string) {
   const [modelQuery, setModelQuery] = useState("");
   const [expandedProviders, setExpandedProviders] = useState<Set<string>>(new Set());
   const cachedControls = useMemo(
-    () => readSessionListCache<CachedControls>(controlsCacheKey(apiBase)),
+    () => readPersistentListCache<CachedControls>(controlsCacheKey(apiBase)),
     [apiBase],
   );
   const cachedOverview = useMemo(
-    () => readSessionListCache<CachedOverview>(`${OVERVIEW_CACHE_PREFIX}${apiBase}`),
+    () => readPersistentListCache<CachedOverview>(`${OVERVIEW_CACHE_PREFIX}${apiBase}`),
     [apiBase],
   );
   const cachedUsage = useMemo(
-    () => readSessionListCache<UsageSummary30d>(`${USAGE_CACHE_PREFIX}${apiBase}`),
+    () => readPersistentListCache<UsageSummary30d>(`${USAGE_CACHE_PREFIX}${apiBase}`),
     [apiBase],
   );
   const cachedStartup = useMemo(() => {
-    const cached = readSessionListCache<StartupHealthStatus>(`${STARTUP_CACHE_PREFIX}${apiBase}`);
+    const cached = readPersistentListCache<StartupHealthStatus>(`${STARTUP_CACHE_PREFIX}${apiBase}`);
     return cached === "error" ? null : cached;
   }, [apiBase]);
   const cachedMaMode = useMemo(
-    () => readSessionListCache<MaMode>(`${MA_MODE_CACHE_PREFIX}${apiBase}`),
+    () => readPersistentListCache<MaMode>(`${MA_MODE_CACHE_PREFIX}${apiBase}`),
+    [apiBase],
+  );
+  const cachedModels = useMemo(
+    () => readPersistentListCache<ModelInfo[]>(`${MODELS_CACHE_PREFIX}${apiBase}`) ?? [],
     [apiBase],
   );
   const [health, setHealth] = useState<HealthData | null>(() => cachedOverview?.health ?? null);
   const [startupHealth, setStartupHealth] = useState<StartupHealthStatus | null>(() => cachedStartup);
   const [providers, setProviders] = useState<ProviderInfo[]>(() => cachedOverview?.providers ?? []);
-  const [models, setModels] = useState<ModelInfo[]>([]);
+  const [models, setModels] = useState<ModelInfo[]>(() => cachedModels);
   const [settings, setSettings] = useState<SettingsData | null>(() => cachedControls?.settings ?? null);
   const [sidecar, setSidecar] = useState<SidecarData | null>(() => cachedControls?.sidecar ?? null);
   const [shadowCall, setShadowCall] = useState<ShadowCallData | null>(() => cachedControls?.shadowCall ?? null);
@@ -299,7 +304,7 @@ export function useDashboardData(apiBase: string) {
       // A stale answer is a placeholder too: caching it makes the next visit start from
       // the server's guess instead of asking again.
       if (probe.status !== "error" && !probe.stale) {
-        writeSessionListCache(`${STARTUP_CACHE_PREFIX}${apiBase}`, probe.status);
+        writePersistentListCache(`${STARTUP_CACHE_PREFIX}${apiBase}`, probe.status);
       }
     }
   }, [startupHealthPoll.data, apiBase]);
@@ -310,7 +315,7 @@ export function useDashboardData(apiBase: string) {
     if (data.health) {
       setHealth(data.health);
       setProviders(data.providers);
-      writeSessionListCache(`${OVERVIEW_CACHE_PREFIX}${apiBase}`, {
+      writePersistentListCache(`${OVERVIEW_CACHE_PREFIX}${apiBase}`, {
         health: data.health,
         providers: data.providers,
       });
@@ -321,7 +326,7 @@ export function useDashboardData(apiBase: string) {
   useEffect(() => {
     if (maModePoll.data === undefined) return;
     setMaMode(maModePoll.data.maMode);
-    writeSessionListCache(`${MA_MODE_CACHE_PREFIX}${apiBase}`, maModePoll.data.maMode);
+    writePersistentListCache(`${MA_MODE_CACHE_PREFIX}${apiBase}`, maModePoll.data.maMode);
   }, [maModePoll.data, apiBase]);
 
   // Derived — avoids setState-on-prop-change for the resolved flag. Cache / poll / optimistic
@@ -350,8 +355,8 @@ export function useDashboardData(apiBase: string) {
     if (!data) return;
     setSidecar(data.sidecar);
     if (data.shadowCall !== undefined) setShadowCall(data.shadowCall);
-    const prev = readSessionListCache<CachedControls>(controlsCacheKey(apiBase)) ?? {};
-    writeSessionListCache(controlsCacheKey(apiBase), {
+    const prev = readPersistentListCache<CachedControls>(controlsCacheKey(apiBase)) ?? {};
+    writePersistentListCache(controlsCacheKey(apiBase), {
       ...prev,
       sidecar: data.sidecar,
       ...(data.shadowCall !== undefined ? { shadowCall: data.shadowCall } : {}),
@@ -371,11 +376,11 @@ export function useDashboardData(apiBase: string) {
       const merged = seedStartupHealthFromSettings(startupHealthRef.current, data.startupHealthSeed);
       setStartupHealth(merged);
       startupHealthRef.current = merged;
-      if (merged) writeSessionListCache(`${STARTUP_CACHE_PREFIX}${apiBase}`, merged);
+      if (merged) writePersistentListCache(`${STARTUP_CACHE_PREFIX}${apiBase}`, merged);
     }
     if (data.settings !== undefined) {
-      const prev = readSessionListCache<CachedControls>(controlsCacheKey(apiBase)) ?? {};
-      writeSessionListCache(controlsCacheKey(apiBase), {
+      const prev = readPersistentListCache<CachedControls>(controlsCacheKey(apiBase)) ?? {};
+      writePersistentListCache(controlsCacheKey(apiBase), {
         ...prev,
         settings: data.settings,
       });
@@ -385,7 +390,7 @@ export function useDashboardData(apiBase: string) {
   useEffect(() => {
     if (usagePoll.data !== undefined) {
       setUsage30d(usagePoll.data);
-      writeSessionListCache(`${USAGE_CACHE_PREFIX}${apiBase}`, usagePoll.data);
+      writePersistentListCache(`${USAGE_CACHE_PREFIX}${apiBase}`, usagePoll.data);
     }
   }, [usagePoll.data, apiBase]);
 
@@ -394,9 +399,12 @@ export function useDashboardData(apiBase: string) {
   }, [diagnosticsPoll.data]);
 
   useEffect(() => {
-    if (modelsPoll.data) setModels(modelsPoll.data);
+    if (modelsPoll.data) {
+      setModels(modelsPoll.data);
+      writePersistentListCache(`${MODELS_CACHE_PREFIX}${apiBase}`, modelsPoll.data);
+    }
     setModelsLoading(modelsPoll.loading);
-  }, [modelsPoll.data, modelsPoll.loading]);
+  }, [modelsPoll.data, modelsPoll.loading, apiBase]);
   /* eslint-enable react-hooks/set-state-in-effect */
   /* oxlint-enable react/react-compiler */
 
@@ -500,8 +508,8 @@ export function useDashboardData(apiBase: string) {
         vision: data.vision,
         ...(data.visionModels ? { visionModels: data.visionModels } : {}),
       });
-      const prev = readSessionListCache<CachedControls>(controlsCacheKey(apiBase)) ?? {};
-      writeSessionListCache(controlsCacheKey(apiBase), {
+      const prev = readPersistentListCache<CachedControls>(controlsCacheKey(apiBase)) ?? {};
+      writePersistentListCache(controlsCacheKey(apiBase), {
         ...prev,
         sidecar: {
           webSearch: data.webSearch,
@@ -551,7 +559,7 @@ export function useDashboardData(apiBase: string) {
      });
      if (r.ok) {
        setMaMode(mode);
-       writeSessionListCache(`${MA_MODE_CACHE_PREFIX}${apiBase}`, mode);
+      writePersistentListCache(`${MA_MODE_CACHE_PREFIX}${apiBase}`, mode);
       } else {
         let message = t("dash.maSwitchFailed", { status: String(r.status) });
         try {
