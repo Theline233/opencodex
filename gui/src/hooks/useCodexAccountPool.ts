@@ -170,6 +170,26 @@ export interface CodexAccountPoolController {
 }
 
 const REFRESH_INTERVAL_MS = 30_000;
+
+function subscriptionNeedsBackgroundRefresh(account: CodexAccountEntry, now = Date.now()): boolean {
+  if (!account.hasCredential || accountNeedsReauth(account)) return false;
+  const plan = (account.subscription?.plan ?? account.plan)?.trim().toLowerCase();
+  // Free/unknown accounts have no paid-subscription deadline to discover.
+  if (!plan || plan === "free") return false;
+  const activeUntil = account.subscription?.activeUntil;
+  const expiry = activeUntil ? Date.parse(activeUntil) : Number.NaN;
+  if (Number.isFinite(expiry) && expiry > now) return false;
+  // The server publishes its retry window after a failed lookup. Honour it in
+  // the browser too so tab mounts cannot turn backoff into a request storm.
+  const nextRetryAt = account.subscription?.nextRetryAt;
+  return nextRetryAt === undefined || nextRetryAt <= now;
+}
+
+function subscriptionBackgroundAttemptKey(account: CodexAccountEntry): string {
+  const id = account.isMain ? "__main__" : account.id;
+  return id + ":" + (account.subscription?.lastAttemptAt ?? 0);
+}
+
 interface CodexAccountUsageRow {
   accountLogLabel: string;
   totalTokens: number;
@@ -207,6 +227,7 @@ export function useCodexAccountPool(apiBase: string, enabled = true): CodexAccou
   const [subscriptionRefreshingId, setSubscriptionRefreshingId] = useState<string | null>(null);
   const [subscriptionsRefreshingAll, setSubscriptionsRefreshingAll] = useState(false);
   const subscriptionRefreshRef = useRef(false);
+  const autoSubscriptionRefreshAttemptsRef = useRef<Map<string, Set<string>>>(new Map());
   // A counter, not a boolean: the initial load, the 30s poll, quota-fill retries and explicit
   // actions can all be in flight together, and an older one settling must not clear the
   // indicator while a newer forced refresh is still running.
@@ -642,10 +663,10 @@ export function useCodexAccountPool(apiBase: string, enabled = true): CodexAccou
     }
   }, [apiBase, load]);
 
-  const refreshAllSubscriptions = useCallback(async () => {
+  const refreshAllSubscriptionsImpl = useCallback(async (showPending: boolean) => {
     if (subscriptionRefreshRef.current) return { ok: false, reason: "busy" } as const;
     subscriptionRefreshRef.current = true;
-    setSubscriptionsRefreshingAll(true);
+    if (showPending) setSubscriptionsRefreshingAll(true);
     try {
       const response = await fetch(`${apiBase}/api/codex-auth/accounts/subscription/refresh-all`, {
         method: "POST",
@@ -680,9 +701,35 @@ export function useCodexAccountPool(apiBase: string, enabled = true): CodexAccou
       return { ok: false, reason: "request" } as const;
     } finally {
       subscriptionRefreshRef.current = false;
-      setSubscriptionsRefreshingAll(false);
+      if (showPending) setSubscriptionsRefreshingAll(false);
     }
   }, [apiBase, load]);
+
+  const refreshAllSubscriptions = useCallback(
+    () => refreshAllSubscriptionsImpl(true),
+    [refreshAllSubscriptionsImpl],
+  );
+
+  useEffect(() => {
+    if (!enabled || loadState !== "ready" || subscriptionRefreshRef.current) return;
+    let attempts = autoSubscriptionRefreshAttemptsRef.current.get(apiBase);
+    if (!attempts) {
+      attempts = new Set();
+      autoSubscriptionRefreshAttemptsRef.current.set(apiBase, attempts);
+    }
+    const pending = accounts
+      .filter(account => subscriptionNeedsBackgroundRefresh(account))
+      .map(subscriptionBackgroundAttemptKey)
+      .filter(key => !attempts.has(key));
+    if (pending.length === 0) return;
+    for (const key of pending) attempts.add(key);
+    // Silent by design: existing account rows stay interactive while the
+    // fallback accounts-check/subscriptions lookup fills a missing deadline.
+    const timer = window.setTimeout(() => {
+      void refreshAllSubscriptionsImpl(false);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [accounts, apiBase, enabled, loadState, refreshAllSubscriptionsImpl]);
 
   const removeAccount = useCallback(async (id: string) => {
     try {

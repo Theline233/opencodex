@@ -38,6 +38,8 @@ let activePinnedAccountId: string | null = null;
 let omitPinnedAccountId = false;
 let activeGetId: string | null = null;
 let deleteCatalogRefreshPending = false;
+let subscriptionRefreshPayload: unknown;
+let subscriptionRefreshGate: Promise<void> | null = null;
 
 beforeEach(() => {
   previous = Object.fromEntries(globals.map((k) => [k, Reflect.get(globalThis, k)])) as typeof previous;
@@ -66,6 +68,33 @@ beforeEach(() => {
   omitPinnedAccountId = false;
   activeGetId = null;
   deleteCatalogRefreshPending = false;
+  subscriptionRefreshGate = null;
+  subscriptionRefreshPayload = {
+    ok: false,
+    total: 2,
+    succeeded: 1,
+    failed: 1,
+    results: [
+      {
+        id: "__main__",
+        ok: true,
+        attempted: true,
+        subscription: {
+          plan: "plus",
+          activeUntil: "2027-01-01T00:00:00.000Z",
+          source: "accounts_check",
+          observedAt: 1,
+        },
+      },
+      {
+        id: "a2",
+        ok: false,
+        attempted: true,
+        subscription: null,
+        errorCode: "upstream_auth",
+      },
+    ],
+  };
   accounts = [{ id: "a1", email: "account-one", isMain: true, paused: false, priority: 0, hasCredential: true, quota: null }];
   usageAccounts = [];
   Object.defineProperty(globalThis, "fetch", {
@@ -135,34 +164,25 @@ beforeEach(() => {
         } as unknown as Response;
       }
       if (path === "codex-auth/accounts/subscription/refresh-all") {
+        if (subscriptionRefreshGate) await subscriptionRefreshGate;
+        const payload = subscriptionRefreshPayload as {
+          results?: Array<{ id?: string; subscription?: unknown }>;
+        };
+        const refreshed = new Map(
+          (payload.results ?? [])
+            .filter((result): result is { id: string; subscription?: unknown } => typeof result.id === "string")
+            .map(result => [result.id, result.subscription ?? null]),
+        );
+        accounts = accounts.map(account => {
+          if (typeof account !== "object" || account === null || !(("id" in account) && ("isMain" in account))) {
+            return account;
+          }
+          const id = account.isMain === true ? "__main__" : String(account.id);
+          return refreshed.has(id) ? { ...account, subscription: refreshed.get(id) ?? null } : account;
+        });
         return {
           ok: true,
-          json: async () => ({
-            ok: false,
-            total: 2,
-            succeeded: 1,
-            failed: 1,
-            results: [
-              {
-                id: "__main__",
-                ok: true,
-                attempted: true,
-                subscription: {
-                  plan: "plus",
-                  activeUntil: "2027-01-01T00:00:00.000Z",
-                  source: "accounts_check",
-                  observedAt: 1,
-                },
-              },
-              {
-                id: "a2",
-                ok: false,
-                attempted: true,
-                subscription: null,
-                errorCode: "upstream_auth",
-              },
-            ],
-          }),
+          json: async () => subscriptionRefreshPayload,
         } as unknown as Response;
       }
       if (path === "codex-auth/accounts/usage") {
@@ -435,6 +455,116 @@ test("bulk subscription refresh writes one endpoint and merges results by stable
     releaseReload();
     await new Promise((resolve) => setTimeout(resolve, 30));
   });
+});
+
+test("a missing paid expiry refreshes silently after the account list is ready", async () => {
+  accounts = [
+    {
+      id: "main-row",
+      email: "main",
+      isMain: true,
+      paused: false,
+      hasCredential: true,
+      plan: "plus",
+      quota: null,
+      subscription: {
+        plan: "plus",
+        activeUntil: "2027-01-01T00:00:00.000Z",
+        source: "jwt",
+        observedAt: 1,
+      },
+    },
+    {
+      id: "a2",
+      email: "pool",
+      isMain: false,
+      paused: false,
+      hasCredential: true,
+      plan: "plus",
+      quota: null,
+      subscription: { plan: "plus", source: "jwt", observedAt: 1 },
+    },
+  ];
+  subscriptionRefreshPayload = {
+    ok: true,
+    total: 2,
+    succeeded: 2,
+    failed: 0,
+    results: [
+      {
+        id: "__main__",
+        ok: true,
+        attempted: false,
+        subscription: accounts[0] && typeof accounts[0] === "object" ? accounts[0].subscription : null,
+      },
+      {
+        id: "a2",
+        ok: true,
+        attempted: true,
+        subscription: {
+          plan: "plus",
+          activeUntil: "2027-02-01T00:00:00.000Z",
+          source: "accounts_check",
+          observedAt: 2,
+        },
+      },
+    ],
+  };
+  let releaseRefresh!: () => void;
+  subscriptionRefreshGate = new Promise<void>(resolve => { releaseRefresh = resolve; });
+
+  const seen = await mountController();
+
+  expect(seen.current!.loadState).toBe("ready");
+  expect(seen.current!.accounts.find(account => account.id === "a2")?.subscription?.activeUntil).toBeUndefined();
+  expect(seen.current!.subscriptionsRefreshingAll).toBe(false);
+  expect(calls.filter(call => call === "POST codex-auth/accounts/subscription/refresh-all")).toHaveLength(1);
+
+  await act(async () => {
+    releaseRefresh();
+    await new Promise(resolve => setTimeout(resolve, 30));
+  });
+
+  expect(seen.current!.accounts.find(account => account.id === "a2")?.subscription?.activeUntil)
+    .toBe("2027-02-01T00:00:00.000Z");
+  expect(calls.filter(call => call === "POST codex-auth/accounts/subscription/refresh-all")).toHaveLength(1);
+});
+
+test("free accounts and paid accounts inside server backoff do not auto-refresh", async () => {
+  accounts = [
+    {
+      id: "free",
+      email: "free",
+      isMain: true,
+      paused: false,
+      hasCredential: true,
+      plan: "free",
+      quota: null,
+      subscription: { plan: "free", source: "jwt", observedAt: 1 },
+    },
+    {
+      id: "paid-backoff",
+      email: "paid",
+      isMain: false,
+      paused: false,
+      hasCredential: true,
+      plan: "plus",
+      quota: null,
+      subscription: {
+        plan: "plus",
+        source: "jwt",
+        observedAt: 1,
+        lastAttemptAt: Date.now(),
+        nextRetryAt: Date.now() + 60_000,
+        lastErrorCode: "network_error",
+      },
+    },
+  ];
+
+  const seen = await mountController();
+
+  expect(seen.current!.loadState).toBe("ready");
+  expect(calls.filter(call => call === "POST codex-auth/accounts/subscription/refresh-all")).toHaveLength(0);
 });
 
 test("two pause holders both have to release before polling resumes", async () => {
